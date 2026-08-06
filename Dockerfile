@@ -8,6 +8,8 @@ RUN dnf install -y \
 COPY bin/*.rpm /tmp/
 RUN rpm -i /tmp/*.rpm && rm -f /tmp/*.rpm
 
+RUN mkdir -p /opt/CEEPack/logs && chown 998:998 /opt/CEEPack/logs
+
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

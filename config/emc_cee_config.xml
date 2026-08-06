@@ -64,7 +64,7 @@
       <ResetRestartCountAfter>86400</ResetRestartCountAfter>
     </WatchDog>
     <LogFile>
-      <Path>/opt/CEEPack/</Path>
+      <Path>/opt/CEEPack/logs/</Path>
       <MaxSize>100</MaxSize>
     </LogFile>
     <Security>
