@@ -1,4 +1,6 @@
 .git
+.github
+.superpowers
 docs
 config
 logs

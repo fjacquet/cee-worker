@@ -5,6 +5,6 @@ services:
     ports:
       - "12228:12228"
     volumes:
-      - ./config/emc_cee_config.xml:/opt/CEEPack/emc_cee_config.xml
+      - ./config/emc_cee_config.xml:/opt/CEEPack/emc_cee_config.xml:ro
       - ./logs:/opt/CEEPack/logs
     restart: unless-stopped

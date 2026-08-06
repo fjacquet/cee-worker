@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<CEEConfig version="8.9.8.0">
+<CEEConfig version="9.2.0.0">
   <CEPP>
     <Audit>
       <Configuration>
         <Enabled>0</Enabled>
-        <EndPoint/>
+        <EndPoint></EndPoint>
       </Configuration>
     </Audit>
     <CQM>
       <Configuration>
         <Enabled>0</Enabled>
-        <EndPoint/>
+        <EndPoint></EndPoint>
       </Configuration>
     </CQM>
     <Backup>
       <Configuration>
         <Enabled>0</Enabled>
-        <EndPoint/>
+        <EndPoint></EndPoint>
         <FeedInterval>60</FeedInterval>
         <MaxEventsPerFeed>100</MaxEventsPerFeed>
       </Configuration>
@@ -24,7 +24,7 @@
     <CARA>
       <Configuration>
         <Enabled>0</Enabled>
-        <EndPoint/>
+        <EndPoint></EndPoint>
         <FeedInterval>60</FeedInterval>
         <MaxEventsPerFeed>100</MaxEventsPerFeed>
       </Configuration>
@@ -32,11 +32,11 @@
     <Index>
       <Configuration>
         <Enabled>0</Enabled>
-        <EndPoint/>
+        <EndPoint></EndPoint>
         <FeedInterval>60</FeedInterval>
         <MaxEventsPerFeed>100</MaxEventsPerFeed>
         <SplunkHEC>
-          <Index/>
+          <Index></Index>
           <Host server="" token=""/>
         </SplunkHEC>
       </Configuration>
@@ -44,7 +44,7 @@
     <VCAPS>
       <Configuration>
         <Enabled>0</Enabled>
-        <EndPoint/>
+        <EndPoint></EndPoint>
         <FeedInterval>60</FeedInterval>
         <MaxEventsPerFeed>100</MaxEventsPerFeed>
       </Configuration>
@@ -58,6 +58,7 @@
     <NumberOfThreads>20</NumberOfThreads>
     <Verbose>0</Verbose>
     <HttpPort>12228</HttpPort>
+    <HttpsPort>12443</HttpsPort>
     <WatchDog>
       <RestartCount>2</RestartCount>
       <RestartDelay>5</RestartDelay>
@@ -70,8 +71,20 @@
     <Security>
       <Access>
         <AccessListEnabled>0</AccessListEnabled>
-        <AccessList/>
+        <AccessList></AccessList>
       </Access>
+      <Http>
+        <ServerEnabled>1</ServerEnabled>
+      </Http>
+      <Https>
+        <ServerEnabled>0</ServerEnabled>
+        <Certificate></Certificate>
+        <PrivateKey></PrivateKey>
+        <CAStore></CAStore>
+        <MinTLSVer>1.2</MinTLSVer>
+        <Platforms verify="0"/>
+        <Partners verify="0"/>
+      </Https>
     </Security>
   </Configuration>
 </CEEConfig>
