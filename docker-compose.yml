@@ -1,0 +1,10 @@
+services:
+  cee:
+    build: .
+    image: cee-worker:local
+    ports:
+      - "12228:12228"
+    volumes:
+      - ./config/emc_cee_config.xml:/opt/CEEPack/emc_cee_config.xml
+      - ./logs:/opt/CEEPack/logs
+    restart: unless-stopped
