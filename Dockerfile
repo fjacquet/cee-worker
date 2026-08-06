@@ -13,6 +13,11 @@ RUN mkdir -p /opt/CEEPack/logs && chown ceesvc:ceesvc /opt/CEEPack/logs
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Convenience for ad-hoc `docker exec` sessions opened without their own
+# `cd`; entrypoint.sh's own `cd /opt/CEEPack` is what actually matters
+# for CEE's relative config-file lookup at runtime.
+WORKDIR /opt/CEEPack
+
 EXPOSE 12228
 
 ENTRYPOINT ["/entrypoint.sh"]
