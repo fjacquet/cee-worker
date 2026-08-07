@@ -63,6 +63,39 @@ Published on tagged releases (git tag vX.Y.Z.W && git push origin vX.Y.Z.W)
 via .github/workflows/publish.yml, or manually via the Actions tab
 (workflow_dispatch).
 
+## Combined test stack (cee + cee-exporter + pstore_exporter + grafana + pstcli)
+
+`docker-compose.test.yml` is a separate stack from the one above: it pulls
+published GHCR images (no local builds) for `cee-worker`, `cee-exporter`,
+and `pstore_exporter`, wires them to one Prometheus + Grafana, and adds
+`pstcli` as an on-demand profile. Design: `docs/superpowers/specs/2026-08-07-test-stack-design.md`.
+
+Requires `../pstore_exporter` checked out as a sibling directory (Grafana's
+bundled dashboards are mounted from there, not copied).
+
+    cp .env.test.example .env
+    # edit .env: GHCR_OWNER, PSTORE1_HOSTNAME/USERNAME/PASSWORD
+    docker compose -f docker-compose.test.yml up -d
+
+Services: `cee` (12228), `cee-exporter` (9228, metrics only — its 12228 CEPA
+listener stays internal), `pstore_exporter` (9446), `prometheus` (9090),
+`grafana` (3000, admin/admin).
+
+To test the CEE → cee-exporter forward path, set one sub-facility's
+`<EndPoint>` in `config/emc_cee_config.xml` to `http://cee-exporter:12228`
+and `docker compose -f docker-compose.test.yml restart cee`.
+
+Run the CLI (one-shot, not a long-running service):
+
+    docker compose -f docker-compose.test.yml run --rm pstcli -version
+    docker compose -f docker-compose.test.yml run --rm pstcli -d 10.0.0.10 -u admin cluster show
+
+`state/` holds pstcli's saved creds/certs — gitignored, keep off shared
+machines.
+
+Known gap: no Grafana dashboard yet for `cee-exporter` metrics — Prometheus
+scrape only, browse via its UI or `/metrics` directly.
+
 ## Out of scope
 
 RabbitMQ messaging (Unity/VNX-only, CEE <=8.8.2.1) and Splunk indexing
