@@ -25,14 +25,13 @@ services:
   cee-exporter:
     image: ghcr.io/${GHCR_OWNER:-fjacquet}/cee-exporter:${CEE_EXPORTER_TAG:-sha-5571a41}
     container_name: test_cee_exporter
-    # 12228 published so a cee instance running outside this compose
-    # network (e.g. the standalone docker-compose.yml, pointed at this
-    # host's IP) can deliver CEPA audit events here. If this stack's own
-    # `cee` service ever runs at the same time, its "12228:12228" mapping
-    # below collides with this one — only run one or the other.
+    # 12228 not published to host: this stack's own `cee` service already
+    # claims host port 12228 for external CEPA sources, so publishing it
+    # here too would collide. cee reaches cee-exporter over the compose
+    # network at http://cee-exporter:12228 instead (see
+    # config/emc_cee_config.xml's Audit EndPoint).
     ports:
       - "9228:9228"
-      - "12228:12228"
     volumes:
       - ./cee-exporter-config.toml:/etc/cee-exporter/config.toml:ro
       - ./logs/cee-exporter:/var/log/cee-exporter
