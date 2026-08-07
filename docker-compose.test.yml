@@ -7,6 +7,9 @@
 #
 # Requires ../pstore_exporter checked out as a sibling directory (for
 # Grafana's bundled PowerStore dashboards).
+#
+# cee-exporter has no ":latest" tag upstream (its CI only pushes sha-* tags);
+# override with CEE_EXPORTER_TAG=sha-xxxxxxx if the pinned default goes stale.
 
 services:
   cee:
@@ -20,7 +23,7 @@ services:
     restart: unless-stopped
 
   cee-exporter:
-    image: ghcr.io/${GHCR_OWNER:-fjacquet}/cee-exporter:latest
+    image: ghcr.io/${GHCR_OWNER:-fjacquet}/cee-exporter:${CEE_EXPORTER_TAG:-sha-5571a41}
     container_name: test_cee_exporter
     ports:
       - "9228:9228"
