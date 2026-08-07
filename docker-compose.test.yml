@@ -29,6 +29,7 @@ services:
       - "9228:9228"
     volumes:
       - ./cee-exporter-config.toml:/etc/cee-exporter/config.toml:ro
+      - ./logs/cee-exporter:/var/log/cee-exporter
     restart: unless-stopped
 
   pstore_exporter:

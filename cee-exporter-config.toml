@@ -6,11 +6,8 @@ addr = "0.0.0.0:12228"
 tls_mode = "off"
 
 [output]
-type = "gelf"
-gelf_host     = "graylog.corp.local"
-gelf_port     = 12201
-gelf_protocol = "udp"
-gelf_tls      = false
+type = "evtx"
+evtx_path = "/var/log/cee-exporter/audit.evtx"
 
 [queue]
 capacity = 100000
