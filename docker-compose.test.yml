@@ -1,0 +1,83 @@
+# Combined test stack: cee-worker + cee-exporter + pstore_exporter + grafana + pstcli.
+# All images pulled from GHCR — no local builds. See
+# docs/superpowers/specs/2026-08-07-test-stack-design.md for the design.
+#
+#   docker compose -f docker-compose.test.yml up -d
+#   docker compose -f docker-compose.test.yml run --rm pstcli -version
+#
+# Requires ../pstore_exporter checked out as a sibling directory (for
+# Grafana's bundled PowerStore dashboards).
+
+services:
+  cee:
+    image: ghcr.io/${GHCR_OWNER:-fjacquet}/cee-worker:latest
+    container_name: test_cee
+    ports:
+      - "12228:12228"
+    volumes:
+      - ./config/emc_cee_config.xml:/opt/CEEPack/emc_cee_config.xml:ro
+      - ./logs:/opt/CEEPack/logs
+    restart: unless-stopped
+
+  cee-exporter:
+    image: ghcr.io/${GHCR_OWNER:-fjacquet}/cee-exporter:latest
+    container_name: test_cee_exporter
+    ports:
+      - "9228:9228"
+    volumes:
+      - ./cee-exporter-config.toml:/etc/cee-exporter/config.toml:ro
+    restart: unless-stopped
+
+  pstore_exporter:
+    image: ghcr.io/${GHCR_OWNER:-fjacquet}/pstore_exporter:${PSTORE_TAG:-latest}
+    container_name: test_pstore_exporter
+    ports:
+      - "9446:9446"
+    volumes:
+      - ./pstore-config.yaml:/etc/pstore_exporter/config.yaml:ro
+    environment:
+      - PSTORE1_HOSTNAME=${PSTORE1_HOSTNAME:-10.0.0.1}
+      - PSTORE1_USERNAME=${PSTORE1_USERNAME:-admin}
+      - PSTORE1_PASSWORD=${PSTORE1_PASSWORD:-}
+      - PSTORE1_SKIP_CERTIFICATE=${PSTORE1_SKIP_CERTIFICATE:-false}
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: test_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.test.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - cee-exporter
+      - pstore_exporter
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: test_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ../pstore_exporter/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../pstore_exporter/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  pstcli:
+    image: ghcr.io/${GHCR_OWNER:-fjacquet}/pstore-cli:latest
+    container_name: test_pstcli
+    platform: linux/amd64
+    profiles: ["cli"]
+    stdin_open: true
+    tty: true
+    working_dir: /work
+    volumes:
+      - ./state:/root
+      - .:/work

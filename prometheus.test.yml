@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 30s
+
+scrape_configs:
+  - job_name: cee-exporter
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["cee-exporter:9228"]
+
+  - job_name: powerstore
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["pstore_exporter:9446"]

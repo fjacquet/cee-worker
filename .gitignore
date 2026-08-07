@@ -1,2 +1,7 @@
 logs/*
 !logs/.gitkeep
+
+# test stack: pstcli creds/certs, local env overrides
+state/*
+!state/.gitkeep
+.env

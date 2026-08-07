@@ -1,0 +1,25 @@
+# Test-stack config for cee-exporter. See cee-exporter/config.toml.example
+# for the full annotated reference.
+
+[listen]
+addr = "0.0.0.0:12228"
+tls_mode = "off"
+
+[output]
+type = "gelf"
+gelf_host     = "graylog.corp.local"
+gelf_port     = 12201
+gelf_protocol = "udp"
+gelf_tls      = false
+
+[queue]
+capacity = 100000
+workers  = 4
+
+[logging]
+level  = "debug"
+format = "text"
+
+[metrics]
+enabled = true
+addr    = "0.0.0.0:9228"
