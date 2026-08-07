@@ -1,4 +1,11 @@
-FROM rockylinux/rockylinux:9
+
+# Must be genuine RHEL, not a rebuild: CEE's own binary reads
+# /etc/redhat-release and self-terminates ("Platform is not supported /
+# qualified") unless it sees the literal Red Hat string. Rocky Linux
+# reports "Rocky Linux release X.Y" there and fails the check even though
+# it's ABI-compatible. UBI9 is Red Hat's own base image, so the string is
+# real, not spoofed.
+FROM registry.access.redhat.com/ubi9/ubi
 
 COPY bin/*.rpm /tmp/
 RUN rpm -i /tmp/*.rpm && rm -f /tmp/*.rpm
