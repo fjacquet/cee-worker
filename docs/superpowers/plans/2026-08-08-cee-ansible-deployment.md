@@ -26,6 +26,7 @@ These apply to every task. Values are copied verbatim from the spec and from the
 - Only the **Audit** sub-facility is enabled. CQM, Backup, CARA, Index, VCAPS stay `0`.
 - Config schema version attribute is `<CEEConfig version="9.2.0.0">`.
 - Changelog format is Keep a Changelog. Versioning tracks CEE's four-part version (`vX.Y.Z.W`), **not** SemVer.
+- **Looped `assert` hides its own `fail_msg`.** When `ansible.builtin.assert` uses `loop:`, Ansible wraps the failure as `{"msg": "One or more items failed", "results": [...]}` and the per-item `fail_msg` appears only nested under `results[n].msg`. Any negative test that matches a substring of `fail_msg` against `ansible_failed_result.msg` must therefore assert against a **non-looped** check. Use a `selectattr`/`rejectattr` formulation over the whole list instead of a per-item loop wherever a test asserts on the message text. This was discovered during Task 2; the original plan text specified looped asserts that could not pass their own tests.
 
 ### One sharpening of the spec
 
@@ -604,30 +605,38 @@ Create `ansible/roles/cee_configure/tasks/validate_endpoints.yml`:
     label: "{{ item.name | default('<unnamed>') }}"
 
 - name: Endpoint hosts must not be loopback
+  # NOTE: deliberately not looped. A failure inside ansible.builtin.assert
+  # with `loop:` is wrapped by Ansible as {"msg": "One or more items
+  # failed", "results": [...]}; the real per-item fail_msg only shows up
+  # nested in `results[n].msg`, not at the top level. The negative test in
+  # test_endpoint_validation.yml asserts on `ansible_failed_result.msg`
+  # directly (via the rescue block), so this check must fail as a single,
+  # non-looped assertion for that substring to be visible there.
   ansible.builtin.assert:
     that:
-      - item.host not in ['127.0.0.1', '::1', 'localhost']
-      - not (item.host is match('^127\\.'))
+      - cee_endpoints | selectattr('host', 'in', ['127.0.0.1', '::1', 'localhost']) | list | length == 0
+      - cee_endpoints | selectattr('host', 'match', '^127\\.') | list | length == 0
     fail_msg: >-
-      Endpoint '{{ item.name }}' points at loopback ({{ item.host }}). The
-      Peer Software PowerStore guide explicitly forbids a loopback address
-      between CEE and its consumer, even when they are co-hosted. Use the
-      routable address of the host running cee-exporter.
-  loop: "{{ cee_endpoints }}"
-  loop_control:
-    label: "{{ item.name }}"
+      Endpoint host(s) {{ cee_endpoints | map(attribute='host') | list }}
+      point at loopback. The Peer Software PowerStore guide explicitly
+      forbids a loopback address between CEE and its consumer, even when
+      they are co-hosted. Use the routable address of the host running
+      cee-exporter.
 
 - name: Endpoint hosts must be an IP address or a dotted FQDN
+  # NOTE: not looped, for the same reason as the loopback check above.
   ansible.builtin.assert:
     that:
-      - (item.host is match('^\\d{1,3}(\\.\\d{1,3}){3}$')) or ('.' in item.host)
+      - >-
+        cee_endpoints
+        | rejectattr('host', 'match', '^\\d{1,3}(\\.\\d{1,3}){3}$')
+        | rejectattr('host', 'search', '\\.')
+        | list | length == 0
     fail_msg: >-
-      Endpoint '{{ item.name }}' host '{{ item.host }}' is a bare hostname.
-      CEE runs on a VM and cannot resolve Docker Compose service names.
-      Use an IP address or a fully-qualified domain name.
-  loop: "{{ cee_endpoints }}"
-  loop_control:
-    label: "{{ item.name }}"
+      Endpoint host(s) {{ cee_endpoints | map(attribute='host') | list }}
+      include a bare hostname. CEE runs on a VM and cannot resolve Docker
+      Compose service names. Use an IP address or a fully-qualified
+      domain name.
 
 - name: Endpoint ports must be in range
   ansible.builtin.assert:
