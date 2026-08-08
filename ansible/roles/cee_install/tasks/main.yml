@@ -1,0 +1,84 @@
+---
+- name: Install UBI 9 repositories
+  ansible.builtin.copy:
+    src: ubi.repo
+    dest: /etc/yum.repos.d/ubi.repo
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Locate the bundled CEE rpm
+  ansible.builtin.set_fact:
+    cee_rpm_candidates: >-
+      {{ query('ansible.builtin.fileglob',
+               playbook_dir + '/../bin/emc_cee_RHEL-*.x86_64.rpm') }}
+
+- name: Exactly one CEE rpm must be present in bin/
+  ansible.builtin.assert:
+    that:
+      - cee_rpm_candidates | length == 1
+    fail_msg: >-
+      Expected exactly one emc_cee_RHEL-*.x86_64.rpm in bin/, found
+      {{ cee_rpm_candidates | length }}. Remove the old rpm before adding a
+      new one — the Dockerfile globs the same directory and has the same
+      requirement.
+
+- name: Record the rpm path
+  ansible.builtin.set_fact:
+    cee_rpm_local: "{{ cee_rpm_candidates[0] }}"
+
+- name: Copy the CEE rpm to the target
+  ansible.builtin.copy:
+    src: "{{ cee_rpm_local }}"
+    dest: /tmp/{{ cee_rpm_local | basename }}
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Install CEE
+  ansible.builtin.dnf:
+    name: /tmp/{{ cee_rpm_local | basename }}
+    state: present
+    disable_gpg_check: true
+  become: true
+  notify: Restart emc_cee
+
+- name: Remove the staged rpm
+  ansible.builtin.file:
+    path: /tmp/{{ cee_rpm_local | basename }}
+    state: absent
+  become: true
+
+- name: Verify the CEE layout
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: cee_layout
+  loop:
+    - /opt/CEEPack/emc_cee.exe
+    - /opt/CEEPack/emc_cee_svc
+    - /etc/systemd/system/emc_cee.service
+  become: true
+
+- name: Every expected CEE path must exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: >-
+      {{ item.item }} is missing after install. The rpm layout changed, or
+      the install silently failed. The unit name this playbook manages is
+      `emc_cee`; if the rpm now ships a different unit, update
+      cee_configure and cee_verify to match.
+  loop: "{{ cee_layout.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Ensure the log directory exists and is writable by the service user
+  ansible.builtin.file:
+    path: "{{ cee_log_path }}"
+    state: directory
+    owner: ceesvc
+    group: ceesvc
+    mode: "0750"
+  become: true

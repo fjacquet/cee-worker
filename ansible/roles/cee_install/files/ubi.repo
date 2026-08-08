@@ -1,0 +1,17 @@
+# UBI 9 repositories. Reachable without a Red Hat subscription, which
+# matters because the CEE target host is unentitled. The CEE rpm installs
+# cleanly on stock UBI9 (see the project Dockerfile), so this package set
+# is known to satisfy it.
+[ubi-9-baseos-rpms]
+name = Red Hat Universal Base Image 9 - BaseOS
+baseurl = https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os
+enabled = 1
+gpgcheck = 1
+gpgkey = file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+
+[ubi-9-appstream-rpms]
+name = Red Hat Universal Base Image 9 - AppStream
+baseurl = https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/appstream/os
+enabled = 1
+gpgcheck = 1
+gpgkey = file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
