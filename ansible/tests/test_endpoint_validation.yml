@@ -15,7 +15,7 @@
           ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
         - name: Should be unreachable
           ansible.builtin.fail:
-            msg: "127.0.0.1 was accepted. The Peer guide forbids loopback here."
+            msg: "Validation did not reject 127.0.0.1."
       rescue:
         - name: Confirm it failed for the loopback reason
           ansible.builtin.assert:
@@ -39,7 +39,7 @@
           ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
         - name: Should be unreachable
           ansible.builtin.fail:
-            msg: "A bare hostname was accepted; CEE on a VM cannot resolve compose DNS."
+            msg: "Validation did not reject the bare hostname 'cee-exporter'."
       rescue:
         - name: Confirm it failed for the resolvability reason
           ansible.builtin.assert:

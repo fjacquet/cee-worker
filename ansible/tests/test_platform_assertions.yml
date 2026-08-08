@@ -13,12 +13,12 @@
           ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform.yml
         - name: Should be unreachable
           ansible.builtin.fail:
-            msg: "Rocky was accepted. CEE self-terminates on non-Red Hat hosts."
+            msg: "Validation did not reject the Rocky distribution."
       rescue:
         - name: Confirm it failed for the distribution reason
           ansible.builtin.assert:
             that:
-              - "'Red Hat' in (ansible_failed_result.msg | default('') | string)"
+              - "'/etc/redhat-release' in (ansible_failed_result.msg | default('') | string)"
             fail_msg: "Failed, but not with the genuine-Red-Hat message."
 
 - name: RHEL 8 is rejected
@@ -35,12 +35,12 @@
           ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform.yml
         - name: Should be unreachable
           ansible.builtin.fail:
-            msg: "RHEL 8 was accepted; the guide requires 9.x for CEE 9.2."
+            msg: "Validation did not reject major version 8."
       rescue:
         - name: Confirm it failed for the version reason
           ansible.builtin.assert:
             that:
-              - "'9' in (ansible_failed_result.msg | default('') | string)"
+              - "'requires RHEL 9.x' in (ansible_failed_result.msg | default('') | string)"
             fail_msg: "Failed, but not with the major-version message."
 
 - name: Genuine RHEL 9 passes
