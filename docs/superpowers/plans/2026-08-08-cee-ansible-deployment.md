@@ -26,6 +26,7 @@ These apply to every task. Values are copied verbatim from the spec and from the
 - Only the **Audit** sub-facility is enabled. CQM, Backup, CARA, Index, VCAPS stay `0`.
 - Config schema version attribute is `<CEEConfig version="9.2.0.0">`.
 - Changelog format is Keep a Changelog. Versioning tracks CEE's four-part version (`vX.Y.Z.W`), **not** SemVer.
+- **Never pair `failed_when: false` with a later `is failed` check.** `failed_when` *overwrites* the registered result's `failed` key with the expression's value, so `failed_when: false` forces `failed` to `False` unconditionally and any downstream `when: x is failed` or `assert: x is not failed` becomes dead code. Use `ignore_errors: true` instead: it lets the play continue while preserving the module's real result. `failed_when: false` remains correct when the downstream check reads a different field, such as `rc` — the chrony check in `cee_preflight` does exactly that and is fine. Found twice: in `cee_verify`'s port check and `cee_preflight`'s port check.
 - **A negative test's canary message must share no substring with what its `rescue` asserts on.** These tests use a `block` whose last task is a canary `ansible.builtin.fail` ("should be unreachable"), with a `rescue` that asserts a substring of the real `fail_msg` appears in `ansible_failed_result.msg`. If the canary's own message contains that substring, deleting the validation rule lets execution fall through to the canary, whose message satisfies the assertion — the test passes anyway and catches nothing. Every such test must be mutation-checked: disable its rule, confirm the test fails, restore. Discovered during Task 3 and found to affect Task 2 as well.
 - **Signature verification.** Do not pass `disable_gpg_check: true` to the `dnf` module. It maps to `dnf --nogpgcheck`, which is transaction-wide and suppresses verification of the UBI-sourced dependencies too, nullifying `gpgcheck = 1` in `ubi.repo`. The CEE rpm is OpenPGP-signed (RSA/SHA256, fingerprint `F85417992FA59E0A84F1E2CCF4A476D807DD4467`), but Dell's public key is not obtainable outside their authenticated support portal, so the local rpm installs unverified under dnf's `localpkg_gpgcheck` default while repo dependencies stay verified.
 - **Looped `assert` hides its own `fail_msg`.** When `ansible.builtin.assert` uses `loop:`, Ansible wraps the failure as `{"msg": "One or more items failed", "results": [...]}` and the per-item `fail_msg` appears only nested under `results[n].msg`. Any negative test that matches a substring of `fail_msg` against `ansible_failed_result.msg` must therefore assert against a **non-looped** check. Use a `selectattr`/`rejectattr` formulation over the whole list instead of a per-item loop wherever a test asserts on the message text. This was discovered during Task 2; the original plan text specified looped asserts that could not pass their own tests.
@@ -830,7 +831,7 @@ Create `ansible/roles/cee_preflight/tasks/main.yml`:
     state: stopped
     timeout: 3
   register: cee_port_free
-  failed_when: false
+  ignore_errors: true
 
 - name: Report a pre-existing listener on the CEE port
   ansible.builtin.debug:
@@ -1101,7 +1102,7 @@ Create `ansible/roles/cee_verify/tasks/main.yml`:
     state: started
     timeout: 30
   register: cee_listening
-  failed_when: false
+  ignore_errors: true
 
 - name: Report a missing listener with the likely cause
   ansible.builtin.assert:
