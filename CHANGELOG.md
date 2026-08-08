@@ -43,7 +43,28 @@ Dell CEE build and the useful version to know is CEE's own.
 - README restructured around two paths: Ansible on RHEL 9 (supported) and
   the container (lab sandbox, not a supported Dell configuration)
 
-## [0.1.0] - 2026-08-06
+## [9.2.0.1] - 2026-08-07
+
+### Added
+
+- Combined GHCR test stack (`docker-compose.test.yml`): cee, cee-exporter,
+  pstore_exporter, Prometheus and Grafana, pulled from GHCR with no local
+  builds — usage documented in README
+- cee's Audit facility enabled, with its `<EndPoint>` pointed at
+  cee-exporter, wiring the test stack's forward path end to end
+
+### Fixed
+
+- Base image switched to Red Hat UBI9 — the previous base's
+  `/etc/redhat-release` string was rejected by CEE
+- cee's Audit `<EndPoint>` resolves cee-exporter by its compose-internal DNS
+  name rather than a host IP, and cee-exporter no longer publishes 12228 to
+  the host — avoiding a clash with cee's own host-published 12228 listener
+- cee-exporter's test output switched to evtx; the previous GELF target was
+  unreachable
+- cee-exporter's image tag pinned; upstream CI never pushes `:latest`
+
+## [9.2.0.0] - 2026-08-06
 
 ### Added
 
