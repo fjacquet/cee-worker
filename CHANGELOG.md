@@ -70,5 +70,4 @@ Dell CEE build and the useful version to know is CEE's own.
 
 - CEE 9.2.0.0 packaged as a container, published to GHCR on tagged
   releases
-- Combined test stack (`docker-compose.test.yml`): cee-worker,
-  cee-exporter, pstore_exporter, Prometheus, Grafana, and pstcli
+- `docker-compose.yml` for one-command CEE runs
