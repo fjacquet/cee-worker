@@ -1,0 +1,34 @@
+---
+# Required-variable gate. Isolated from main.yml so tests/ can include it
+# directly with a deliberately incomplete variable set.
+#
+# These roles ship no defaults/main.yml on purpose: an explicit refusal
+# beats a default that quietly renders a wrong config. This runs first, so
+# a missing group_vars/all.yml is named here rather than swallowed by the
+# ignore_errors on the port probe and re-surfacing several tasks later as
+# a raw Jinja undefined against the wrong task.
+
+- name: Every required variable must be defined
+  ansible.builtin.assert:
+    that:
+      - cee_http_port is defined
+      - cee_https_port is defined
+      - cee_endpoints is defined
+      - cee_access_list_enabled is defined
+      - cee_access_list is defined
+      - cee_facilities is defined
+      - cee_manage_firewall is defined
+      - cee_log_path is defined
+      - cee_cache_size is defined
+      - cee_threads is defined
+      - cee_debug is defined
+      - cee_verbose is defined
+    fail_msg: >-
+      One or more required variables are undefined. These roles ship no
+      defaults on purpose. Copy ansible/group_vars/all.yml.example to
+      ansible/group_vars/all.yml and fill it in; every variable named in
+      this assertion is documented there. Required:
+      cee_http_port, cee_https_port, cee_endpoints,
+      cee_access_list_enabled, cee_access_list, cee_facilities,
+      cee_manage_firewall, cee_log_path, cee_cache_size, cee_threads,
+      cee_debug, cee_verbose.

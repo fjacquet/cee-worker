@@ -18,7 +18,10 @@ Dell CEE build and the useful version to know is CEE's own.
 - Config rendered from `emc_cee_config.xml.j2`, with endpoint validation
   that rejects loopback addresses, bare hostnames and empty endpoint lists
 - Localhost test suite (`ansible/tests/run.sh`) covering template
-  rendering, endpoint validation and the platform gate — no VM required
+  rendering, endpoint validation, the platform gate, the required-variable
+  gate and the sub-facility gate — no VM required. Every negative test was
+  mutation-tested: the guard it covers was disabled, the test was watched
+  to fail, and the guard restored
 - Installation from the publicly reachable UBI 9 repositories, so the CEE
   host does not need a Red Hat subscription
 - `docs/ansible-deployment.md` — deployment procedure and troubleshooting
@@ -35,7 +38,11 @@ Dell CEE build and the useful version to know is CEE's own.
 - `cee_preflight` asserts every required variable up front, naming each
   one and pointing at `group_vars/all.yml.example`. The roles deliberately
   ship no `defaults/main.yml`: an explicit refusal beats a silent default
-  that renders a wrong config
+  that renders a wrong config. Split into
+  `cee_preflight/tasks/assert_required_vars.yml`, and the sub-facility
+  gate into `cee_configure/tasks/assert_facilities.yml`, so both can be
+  included by the test suite — the same reason `assert_platform.yml` and
+  `validate_endpoints.yml` are separate files
 - `docs/acceptance-tests.md` — the test plan for the first live
   deployment, separating what CI already proves from what has never run
   against real hardware, and giving each test a way to tell a real failure

@@ -15,7 +15,7 @@ Five things run today, all of them on a workstation or a CI runner:
 
 | Command | What it actually proves |
 |---|---|
-| `ansible/tests/run.sh` | Three localhost playbooks: the config template renders the expected XML from known variables, the endpoint validator rejects loopback / bare hostnames / an empty list, and the platform gate rejects Rocky and RHEL 8. No host is contacted. |
+| `ansible/tests/run.sh` | Five localhost playbooks: the config template renders the expected XML from known variables; the endpoint validator rejects loopback, bare hostnames and an empty list; the platform gate rejects Rocky and RHEL 8; the required-variable gate rejects an incomplete `group_vars`; and the sub-facility gate rejects a non-Audit selection, two enabled facilities, and none. Every negative test has been mutation-tested — its guard disabled, the test watched to fail, the guard restored. No host is contacted. |
 | `cd ansible && ansible-playbook --syntax-check site.yml` | The playbook parses and every module named in it resolves. It does not execute a single task. |
 | `yamllint ansible/ .github/` | Formatting. |
 | `ansible-lint ansible/` | Rule compliance at the `production` profile. Idempotency claims in it are static heuristics, not observations. |
