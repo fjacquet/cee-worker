@@ -38,10 +38,27 @@
   become: true
 
 - name: Install CEE
+  # Deliberately no disable_gpg_check here. That option maps to dnf
+  # --nogpgcheck, which is transaction-wide: it would also suppress
+  # signature verification for every UBI-sourced dependency this rpm pulls
+  # in, nullifying `gpgcheck = 1` in files/ubi.repo exactly when it
+  # matters. Leaving it unset restores dnf's normal behaviour —
+  # repo-sourced packages are checked against the Red Hat key that
+  # ubi.repo already points at
+  # (/etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release), while this local
+  # vendored rpm is governed by dnf's `localpkg_gpgcheck` setting, which
+  # defaults to off, so it installs unverified.
+  #
+  # The CEE rpm IS signed (RSA/SHA256, fingerprint
+  # F85417992FA59E0A84F1E2CCF4A476D807DD4467), but Dell distributes that
+  # signing key only through their authenticated support portal — it is
+  # not on public keyservers or in Dell's public pgp_pubkeys repo, so it
+  # cannot be vendored into this repo. If that key is obtained through
+  # the support portal in the future, `localpkg_gpgcheck: true` (plus
+  # importing the key on the target) would close this remaining gap.
   ansible.builtin.dnf:
     name: /tmp/{{ cee_rpm_local | basename }}
     state: present
-    disable_gpg_check: true
   become: true
   notify: Restart emc_cee
 
