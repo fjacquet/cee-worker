@@ -293,3 +293,30 @@ Out of scope, deliberately:
 - Removing the container. It stays as a lab sandbox.
 - VCAPS, CARA, CQM, Index, and Backup sub-facilities. Audit only.
 - RabbitMQ messaging and Splunk indexing, already out of scope in the README.
+
+---
+
+## Correction — 2026-08-08
+
+The `group_vars/all.yml` sketch above shows three scalars —
+`cee_consumer_name`, `cee_consumer_host` and `cee_consumer_port`. That is not
+what shipped. The implementation uses a single `cee_endpoints` list of
+`{name, host, port}` mappings, and copying the block above into a real
+`group_vars/all.yml` fails `cee_preflight` with "cee_endpoints is undefined".
+
+The change was deliberate. Ordering within the endpoint list is semantically
+load-bearing: CEE monitors the *first* endpoint to decide whether to publish at
+all, so if the first consumer is down none of the others receive events either.
+Three scalars can express one consumer but cannot express which one comes first,
+so the multi-consumer form the same spec asks for further down ("the template
+renders the endpoint as a list to preserve the Dell guide's semicolon-separated
+multi-consumer form") has nowhere to live. The list was adopted before any code
+was written; only this variable sketch was left behind.
+
+`ansible/group_vars/all.yml.example` is the authoritative shape. It is committed,
+CI seeds `group_vars/all.yml` from it, and `ansible/tests/test_template_render.yml`
+asserts that a two-entry list renders semicolon-separated in declared order.
+
+This note is appended rather than edited in place, matching the 2026-08-06 spec:
+the divergence between an approved design and what was built is the part worth
+keeping.

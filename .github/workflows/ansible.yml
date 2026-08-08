@@ -7,12 +7,21 @@ on:
   pull_request:
   workflow_dispatch: {}
 
+# Read-only, and declared at workflow level rather than per job so a job
+# added later inherits it instead of silently getting the repository
+# default. This workflow only lints and runs localhost playbooks; it never
+# writes to the repo or to a registry.
+permissions:
+  contents: read
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5

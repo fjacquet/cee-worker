@@ -1,4 +1,23 @@
 ---
+# Negative tests for cee_configure's endpoint gate.
+#
+# Two rules govern every play below, and both have already cost this
+# branch a defect:
+#
+# 1. Each canary `fail` message is worded to share no substring with what
+#    its rescue asserts on. Otherwise deleting the rule under test lets
+#    execution fall through to the canary, whose message satisfies the
+#    rescue, and the test passes while catching nothing.
+# 2. The rule under test must be a non-looped assertion. Under `loop:`,
+#    Ansible reports {"msg": "One or more items failed", ...} and the real
+#    fail_msg is buried in `results[n].msg`, so matching on
+#    `ansible_failed_result.msg` would never see it. This is why the host
+#    and port checks in validate_endpoints.yml use selectattr/rejectattr
+#    over the whole list rather than a loop.
+#
+# Every play here was mutation-tested: the rule it covers was deleted, the
+# play was watched to fail, and the rule restored.
+
 - name: Loopback endpoints are rejected
   hosts: localhost
   connection: local
@@ -67,6 +86,81 @@
             that:
               - "'at least one' in (ansible_failed_result.msg | default('') | string)"
             fail_msg: "Validation failed, but not with the empty-list message."
+
+- name: Port 0 is rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_endpoints:
+      - name: ceeexporter
+        host: 10.10.10.10
+        port: 0
+  tasks:
+    - name: Expect validation to fail
+      block:
+        - name: Validate
+          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation accepted port 0, which no listener can bind."
+      rescue:
+        - name: Confirm it failed for the port-range reason
+          ansible.builtin.assert:
+            that:
+              - "'out of range' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Validation failed, but not with the port-range message."
+
+- name: Port 65536 is rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_endpoints:
+      - name: ceeexporter
+        host: 10.10.10.10
+        port: 65536
+  tasks:
+    - name: Expect validation to fail
+      block:
+        - name: Validate
+          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation accepted port 65536, one past the top of the TCP port space."
+      rescue:
+        - name: Confirm it failed for the port-range reason
+          ansible.builtin.assert:
+            that:
+              - "'out of range' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Validation failed, but not with the port-range message."
+
+- name: A fractional port is rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_endpoints:
+      - name: ceeexporter
+        host: 10.10.10.10
+        port: 12228.5
+  tasks:
+    - name: Expect validation to fail
+      block:
+        - name: Validate
+          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: >-
+              Validation accepted 12228.5. The `int` filter truncates it to
+              12228 while the template renders the raw value, so CEE would
+              have been handed http://10.10.10.10:12228.5 and dropped it.
+      rescue:
+        - name: Confirm it failed for the port-type reason
+          ansible.builtin.assert:
+            that:
+              - "'non-integer' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Validation failed, but not with the port-type message."
 
 - name: A well-formed endpoint passes
   hosts: localhost

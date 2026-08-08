@@ -5,13 +5,14 @@
 # rescue asserts on. If the assertion in assert_required_vars.yml is
 # deleted, execution falls through to the canary, whose message satisfies
 # nothing the rescue looks for, and the test fails — which is the point.
-# Verified by mutation: with the gate disabled, both negative plays fail.
+# Verified by mutation: with the gate disabled, every negative play fails.
 #
-# The gate's fail_msg names all twelve variables regardless of which one
-# is missing, so matching on a variable name in `msg` would not prove the
-# gate identified the right one. `ansible_failed_result.assertion` carries
-# the specific expression that evaluated false, so that is what these
-# tests match on.
+# The defined-gate's fail_msg names all twelve variables regardless of
+# which one is missing, so matching on a variable name in `msg` would not
+# prove the gate identified the right one. `ansible_failed_result.assertion`
+# carries the specific expression that evaluated false, so that is what the
+# first two plays match on. The port-range gate is one task per variable
+# and names only the variable at fault, so that play matches on `msg`.
 
 - name: A missing cee_manage_firewall is rejected
   hosts: localhost
@@ -100,6 +101,54 @@
             fail_msg: >-
               The gate failed, but not on cee_endpoints with the message
               that points at group_vars/all.yml.example.
+
+- name: An out-of-range cee_http_port is rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    # Every variable is present; one of them is not a TCP port. Defined is
+    # not the same as usable, and 70000 would otherwise travel all the way
+    # to firewalld and the config template before anything objected.
+    cee_http_port: 70000
+    cee_https_port: 12443
+    cee_endpoints:
+      - name: ceeexporter
+        host: 10.10.10.10
+        port: 12229
+    cee_access_list_enabled: 1
+    cee_access_list:
+      - 10.20.30.40
+    cee_facilities:
+      audit: true
+      cqm: false
+      backup: false
+      cara: false
+      index: false
+      vcaps: false
+    cee_manage_firewall: true
+    cee_log_path: /opt/CEEPack/logs/
+    cee_cache_size: 100
+    cee_threads: 20
+    cee_debug: 0
+    cee_verbose: 0
+  tasks:
+    - name: Expect the gate to fail
+      block:
+        - name: Assert required vars
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Preflight let cee_http_port 70000 through to firewalld."
+      rescue:
+        - name: Confirm it named the offending variable and its value
+          ansible.builtin.assert:
+            that:
+              - "'cee_http_port is 70000' in (ansible_failed_result.msg | default('') | string)"
+              - "'not a TCP port' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: >-
+              The gate failed, but not with the message naming
+              cee_http_port and the value it rejected.
 
 - name: A complete variable set passes
   hosts: localhost

@@ -32,3 +32,29 @@
       cee_access_list_enabled, cee_access_list, cee_facilities,
       cee_manage_firewall, cee_log_path, cee_cache_size, cee_threads,
       cee_debug, cee_verbose.
+
+# Defined is not enough. An out-of-range listener port reaches firewalld
+# and the config template unchallenged, and the first sign of trouble is
+# cee_verify reporting that nothing is listening on 12228 — which names
+# the wrong problem entirely. Two tasks rather than one so the failure
+# names the variable at fault.
+
+- name: Variable cee_http_port must be a valid TCP port
+  ansible.builtin.assert:
+    that:
+      - cee_http_port | int > 0
+      - cee_http_port | int < 65536
+    fail_msg: >-
+      cee_http_port is {{ cee_http_port }}, which is not a TCP port. It
+      must be between 1 and 65535. This is CEE's inbound listener, the
+      port PowerStore publishes to.
+
+- name: Variable cee_https_port must be a valid TCP port
+  ansible.builtin.assert:
+    that:
+      - cee_https_port | int > 0
+      - cee_https_port | int < 65536
+    fail_msg: >-
+      cee_https_port is {{ cee_https_port }}, which is not a TCP port. It
+      must be between 1 and 65535. CEE writes it into the config even
+      though the HTTPS listener ships disabled.

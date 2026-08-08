@@ -4,12 +4,21 @@
 # CEE inbound listener. PowerStore posts CEPA events here. 12228 is the
 # documented default and the PowerStore side expects it (Dell CEE guide,
 # line 709). Changing it means changing the PowerStore publishing pool too.
+# Both must be a TCP port between 1 and 65535, written as a plain integer.
+# cee_preflight refuses anything else up front: an out-of-range value would
+# otherwise reach firewalld and the config template unchallenged and only
+# surface later as "nothing is listening on 12228", which names the wrong
+# problem.
 cee_http_port: 12228
 cee_https_port: 12443
 
 # Where CEE forwards events. `name` becomes the mandatory `name@` prefix.
 # `host` must be a routable IP or FQDN — never 127.0.0.1, never a Docker
 # Compose service name (CEE runs on a VM and cannot resolve compose DNS).
+#
+# `port` must be a plain integer between 1 and 65535. The template renders
+# it verbatim, so a quoted or fractional value emits a URL CEE drops
+# without logging anything; cee_configure rejects both before that.
 #
 # ORDER MATTERS: CEE monitors the first endpoint to decide whether to
 # publish at all. If the first one is down, no endpoint receives events.

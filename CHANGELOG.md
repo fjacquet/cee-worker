@@ -71,6 +71,32 @@ Dell CEE build and the useful version to know is CEE's own.
   ansible-core's own `callback_result_format = yaml`
 - README described the container base as Rocky Linux 9; it has been UBI9
   since `4cd8007`, because CEE rejects RHEL rebuilds
+- Endpoint validation accepted a fractional port. Jinja's `int` filter
+  falls back to `int(float(v))`, so `port: 12228.5` truncated to 12228 and
+  passed the range check while the template interpolated the raw value and
+  emitted `http://host:12228.5`, which CEE drops without logging. Ports are
+  now type-checked before they are range-checked
+- `cee_http_port` and `cee_https_port` were only asserted to be defined,
+  never to be TCP ports, so `70000` travelled as far as firewalld and the
+  config template and surfaced several roles later as "nothing is listening
+  on 12228" — the wrong problem. `cee_preflight` now range-checks both and
+  names the variable and the value it rejected
+- The endpoint port-range assert had no negative test at all: deleting it
+  outright left the suite green. It is now covered at both bounds, along
+  with the fractional-port case and the new `cee_http_port` range check.
+  The endpoint port checks were de-looped in the process, so their real
+  `fail_msg` reaches the operator instead of Ansible's "One or more items
+  failed" wrapper
+- The template test asserted Audit, CQM and VCAPS but not Backup, CARA or
+  Index, so a regression flipping one of those three to `Enabled=1` would
+  not have been caught
+- Stage 3 of the PowerStore runbook narrowed diagnosis to the inbound leg
+  after telling the reader that CEE's own configuration was still a
+  suspect. It now checks the rendered `emc_cee_config.xml` for an enabled
+  Audit facility and a `name@`-prefixed EndPoint first
+- `.github/workflows/ansible.yml` ran with the repository's default token
+  permissions and left credentials persisted in the checkout. It is now
+  `contents: read` with `persist-credentials: false`
 
 ### Changed
 

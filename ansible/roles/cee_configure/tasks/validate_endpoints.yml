@@ -59,12 +59,28 @@
       Compose service names. Use an IP address or a fully-qualified
       domain name.
 
-- name: Endpoint ports must be in range
+- name: Endpoint ports must be integers
+  # NOTE: not looped, for the same reason as the host checks above.
+  #
+  # This has to run before the range check. Jinja's `int` filter falls back
+  # to int(float(v)), so `port: 12228.5` becomes 12228 and satisfies the
+  # range check — while emc_cee_config.xml.j2 interpolates the raw value
+  # and emits http://host:12228.5, which CEE ignores without complaining.
   ansible.builtin.assert:
     that:
-      - item.port | int > 0
-      - item.port | int < 65536
-    fail_msg: "Endpoint '{{ item.name }}' port {{ item.port }} is out of range."
-  loop: "{{ cee_endpoints }}"
-  loop_control:
-    label: "{{ item.name }}"
+      - cee_endpoints | rejectattr('port', 'integer') | list | length == 0
+    fail_msg: >-
+      Endpoint port(s) {{ cee_endpoints | map(attribute='port') | list }}
+      include a non-integer value. Write the port as a plain unquoted
+      integer: the template interpolates it verbatim, so a fraction or a
+      string renders an EndPoint URL that CEE silently drops.
+
+- name: Endpoint ports must be in range
+  # NOTE: not looped, for the same reason as the host checks above.
+  ansible.builtin.assert:
+    that:
+      - cee_endpoints | selectattr('port', 'le', 0) | list | length == 0
+      - cee_endpoints | selectattr('port', 'ge', 65536) | list | length == 0
+    fail_msg: >-
+      Endpoint port(s) {{ cee_endpoints | map(attribute='port') | list }}
+      include a value out of range. A TCP port must be between 1 and 65535.

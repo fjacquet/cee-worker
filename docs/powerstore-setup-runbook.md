@@ -67,7 +67,7 @@ flowchart TD
 
     F1["Fix CEE first.<br/>Check Http/ServerEnabled=1 and journalctl -u emc_cee"]
     F2["Consumer, network or port mapping.<br/>Check the 12229:12228 mapping and the firewall"]
-    F3["CEE host firewall, CEE config, or PowerStore.<br/>Check 12228/tcp is open, then the access list,<br/>then the name@ prefix, then Events Publishing on<br/>both the NAS server and the filesystem"]
+    F3["CEE config, CEE host firewall, or PowerStore.<br/>Check Audit Enabled=1 and the name@ prefix,<br/>then 12228/tcp is open, then the access list,<br/>then Events Publishing on both the NAS server<br/>and the filesystem"]
     OK["Path verified end to end"]
 
     S1 -->|pass| S2
@@ -156,10 +156,29 @@ Expected: corresponding `CreateFile` and `DeleteFile` events appear in
 cee-exporter's output (`/var/log/cee-exporter/audit.evtx` in the test
 stack) within a few seconds.
 
-If Stage 2 passed and Stage 3 did not, the problem is on the inbound leg —
-PowerStore to CEE. Check in this order, cheapest first:
+If Stage 2 passed and Stage 3 did not, the fault is in CEE's own
+configuration or on the inbound leg — PowerStore to CEE. Stage 2 rules out
+the consumer, the network path to it and the port mapping, but it does not
+exercise CEE's config at all, because it bypasses CEE entirely. Check in
+this order, cheapest first:
 
-1. **The CEE host's firewall.** On the CEE host:
+1. **CEE's rendered configuration.** On the CEE host, read what the
+   playbook actually wrote:
+
+       grep -A3 '<Audit>' /opt/CEEPack/emc_cee_config.xml
+
+   Expected: `<Enabled>1</Enabled>` inside `<Audit>`, and an `<EndPoint>`
+   of the form `name@http://host:port` —
+   `ceeexporter@http://10.10.10.10:12229` for the test stack.
+
+   `<Enabled>0</Enabled>` means the Audit sub-facility is off and CEE
+   forwards nothing whatever PowerStore sends. A bare URL with no `name@`
+   prefix is the harder one to spot: CEE accepts the file, starts
+   normally, and silently ignores the entry, so Stage 1 and Stage 2 both
+   still pass. Either is a `cee_facilities` or `cee_endpoints` edit in
+   `group_vars/all.yml` and a playbook re-run.
+
+2. **The CEE host's firewall.** On the CEE host:
 
        firewall-cmd --list-ports
        firewall-cmd --state
@@ -175,14 +194,14 @@ PowerStore to CEE. Check in this order, cheapest first:
 
        nc -vz <cee-host> 12228
 
-2. **CEE's access list.** `AccessListEnabled` is 1 by default and only
+3. **CEE's access list.** `AccessListEnabled` is 1 by default and only
    the addresses in `cee_access_list` may post. A NAS server publishing
    from an address that is not on that list is refused at CEE, not at the
    firewall. Check `/opt/CEEPack/logs/*.log` on the CEE host — a rejected
    source is logged; a firewalled one leaves no trace at all. That
    difference is the fastest way to tell the two apart.
 
-3. **The PowerStore side.** Recheck that Events Publishing is enabled on
+4. **The PowerStore side.** Recheck that Events Publishing is enabled on
    both the NAS server *and* the individual filesystem, that the protocol
    selection matches how the client mounted, and that the CEE host address
    in the publishing pool is correct.

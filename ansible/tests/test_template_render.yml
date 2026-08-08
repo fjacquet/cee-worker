@@ -58,6 +58,9 @@
         that:
           - cee_xml is search('<Audit>\\s*<Configuration>\\s*<Enabled>1</Enabled>')
           - cee_xml is search('<CQM>\\s*<Configuration>\\s*<Enabled>0</Enabled>')
+          - cee_xml is search('<Backup>\\s*<Configuration>\\s*<Enabled>0</Enabled>')
+          - cee_xml is search('<CARA>\\s*<Configuration>\\s*<Enabled>0</Enabled>')
+          - cee_xml is search('<Index>\\s*<Configuration>\\s*<Enabled>0</Enabled>')
           - cee_xml is search('<VCAPS>\\s*<Configuration>\\s*<Enabled>0</Enabled>')
         fail_msg: "Exactly one sub-facility (Audit) must be enabled."
 
