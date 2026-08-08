@@ -65,7 +65,7 @@ Not previously recorded anywhere in this repo:
 
 ```
 PowerStore NAS server
-   │  CEPA events, HTTP POST
+   │  CEPA events (source API, TCP 12228)
    ▼
 CEE  (RHEL 9 VM, systemd emc_cee, :12228 inbound)   ← Ansible manages this
    │  <EndPoint>ceeexporter@http://<docker-host>:12229
@@ -213,13 +213,18 @@ Three stages, ordered so a failure localises to one leg:
 
 1. `cee_verify` asserts `systemctl is-active emc_cee`, port 12228 listening, and
    the CEE log free of `Platform is not supported`.
-2. POST a synthetic CEPA event to the CEE host's 12228 and confirm cee-exporter's
-   `/metrics` event counter increments. This isolates the CEE → exporter leg.
+2. From the CEE host, `PUT` a synthetic CEPA XML event at cee-exporter's 12229 and
+   confirm `cee_events_received_total` increments.
 3. Touch a file on a monitored PowerStore filesystem and confirm the event reaches
-   cee-exporter's evtx output. This exercises the PowerStore → CEE leg.
+   cee-exporter's evtx output. This exercises the full path.
 
-Stage 2 is the decomposition missing today: it distinguishes a broken forward hop
-from a broken PowerStore publisher.
+Stage 2 is the decomposition missing today. Note what it does and does not cover:
+it proves the consumer is running, reachable from the CEE host at the configured
+address, and parsing CEPA XML. It does not exercise CEE's own forwarding, because
+CEE's inbound interface is the source API that PowerStore speaks and there is no
+documented way to inject a synthetic event into it. If Stage 2 passes and Stage 3
+fails, the consumer, the network path and the port mapping are ruled out, leaving
+CEE's configuration or the PowerStore side — which is the isolation that matters.
 
 ## Error handling
 
