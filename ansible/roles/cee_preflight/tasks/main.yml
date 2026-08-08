@@ -10,22 +10,22 @@
 - name: Check whether chrony is present
   ansible.builtin.stat:
     path: /usr/bin/chronyc
-  register: cee_chronyc
+  register: cee_preflight_chronyc
 
 - name: Time must be synchronised
-  when: cee_chronyc.stat.exists
+  when: cee_preflight_chronyc.stat.exists
   block:
     - name: Query chrony tracking state
       ansible.builtin.command: chronyc tracking
-      register: cee_chrony_tracking
+      register: cee_preflight_chrony_tracking
       changed_when: false
       failed_when: false
 
     - name: Clock must not be unsynchronised
       ansible.builtin.assert:
         that:
-          - cee_chrony_tracking.rc == 0
-          - "'Not synchronised' not in cee_chrony_tracking.stdout"
+          - cee_preflight_chrony_tracking.rc == 0
+          - "'Not synchronised' not in cee_preflight_chrony_tracking.stdout"
         fail_msg: >-
           Clock is not synchronised. The PowerStore array, this CEE host and
           the consumer must agree on time or events are rejected or
@@ -36,7 +36,7 @@
     msg: >-
       chronyc not found — time synchronisation could not be verified.
       PowerStore, CEE and the consumer must share synchronised time.
-  when: not cee_chronyc.stat.exists
+  when: not cee_preflight_chronyc.stat.exists
 
 - name: Check whether the CEE port is already in use
   ansible.builtin.wait_for:
@@ -44,7 +44,7 @@
     host: 127.0.0.1
     state: stopped
     timeout: 3
-  register: cee_port_free
+  register: cee_preflight_port_free
   # Use ignore_errors rather than failed_when: false to preserve the module's real
   # failure status so the downstream 'is failed' check can detect port conflicts
   ignore_errors: true
@@ -55,4 +55,4 @@
       Something is already listening on {{ cee_http_port }}. If this is a
       previous emc_cee instance the playbook will reconfigure it; if it is
       another service, CEE will fail to bind.
-  when: cee_port_free is failed
+  when: cee_preflight_port_free is failed

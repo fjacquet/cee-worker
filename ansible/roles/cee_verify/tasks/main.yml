@@ -9,15 +9,15 @@
 - name: Query the emc_cee unit state
   ansible.builtin.systemd_service:
     name: emc_cee
-  register: cee_unit
+  register: cee_verify_unit
   become: true
 
-- name: emc_cee must be running
+- name: Unit emc_cee must be running
   ansible.builtin.assert:
     that:
-      - cee_unit.status.ActiveState == 'active'
+      - cee_verify_unit.status.ActiveState == 'active'
     fail_msg: >-
-      emc_cee is {{ cee_unit.status.ActiveState }}, not active. Check
+      emc_cee is {{ cee_verify_unit.status.ActiveState }}, not active. Check
       `journalctl -u emc_cee -n 50` and the CEE log under
       {{ cee_log_path }}.
 
@@ -27,24 +27,24 @@
     host: 127.0.0.1
     state: started
     timeout: 30
-  register: cee_listening
+  register: cee_verify_listening
   # NOTE: deliberately ignore_errors, not failed_when: false. failed_when
   # overwrites the registered result's own `failed` key with the
   # failed_when expression's value, so `failed_when: false` forces
-  # cee_listening.failed to False unconditionally -- a timed-out wait_for
-  # and a successful one become indistinguishable, and the assert below
-  # would never fire even with nothing listening. ignore_errors only
+  # cee_verify_listening.failed to False unconditionally -- a timed-out
+  # wait_for and a successful one become indistinguishable, and the assert
+  # below would never fire even with nothing listening. ignore_errors only
   # stops the play from halting; it leaves the module's real
   # success/failure in the registered var, which is what the next task
   # actually needs to inspect. Verified empirically: with failed_when:
-  # false, `cee_listening is not failed` was true even against a port
-  # nothing was listening on.
+  # false, `cee_verify_listening is not failed` was true even against a
+  # port nothing was listening on.
   ignore_errors: true
 
 - name: Report a missing listener with the likely cause
   ansible.builtin.assert:
     that:
-      - cee_listening is not failed
+      - cee_verify_listening is not failed
     fail_msg: >-
       Nothing is listening on {{ cee_http_port }}. CEE 9.x ships
       Security/Http/ServerEnabled=0 by default; confirm the rendered
@@ -55,13 +55,13 @@
   ansible.builtin.find:
     paths: "{{ cee_log_path }}"
     patterns: "*.log"
-  register: cee_logs
+  register: cee_verify_logs
   become: true
 
 - name: CEE must have written a log
   ansible.builtin.assert:
     that:
-      - cee_logs.files | length > 0
+      - cee_verify_logs.files | length > 0
     fail_msg: >-
       No log files under {{ cee_log_path }}. CEE did not start, or
       LogFile/Path in the rendered config does not match. An empty log
@@ -69,14 +69,14 @@
 
 - name: Read the CEE log
   ansible.builtin.slurp:
-    src: "{{ (cee_logs.files | sort(attribute='mtime') | last).path }}"
-  register: cee_log_content
+    src: "{{ (cee_verify_logs.files | sort(attribute='mtime') | last).path }}"
+  register: cee_verify_log_content
   become: true
 
 - name: Log must not report an unsupported platform
   ansible.builtin.assert:
     that:
-      - "'Platform is not supported' not in (cee_log_content.content | b64decode)"
+      - "'Platform is not supported' not in (cee_verify_log_content.content | b64decode)"
     fail_msg: >-
       CEE reports an unsupported platform. /etc/redhat-release does not
       contain the literal Red Hat string this host claimed to have.

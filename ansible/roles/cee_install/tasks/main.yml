@@ -10,28 +10,28 @@
 
 - name: Locate the bundled CEE rpm
   ansible.builtin.set_fact:
-    cee_rpm_candidates: >-
+    cee_install_rpm_candidates: >-
       {{ query('ansible.builtin.fileglob',
                playbook_dir + '/../bin/emc_cee_RHEL-*.x86_64.rpm') }}
 
 - name: Exactly one CEE rpm must be present in bin/
   ansible.builtin.assert:
     that:
-      - cee_rpm_candidates | length == 1
+      - cee_install_rpm_candidates | length == 1
     fail_msg: >-
       Expected exactly one emc_cee_RHEL-*.x86_64.rpm in bin/, found
-      {{ cee_rpm_candidates | length }}. Remove the old rpm before adding a
-      new one — the Dockerfile globs the same directory and has the same
-      requirement.
+      {{ cee_install_rpm_candidates | length }}. Remove the old rpm before
+      adding a new one — the Dockerfile globs the same directory and has the
+      same requirement.
 
 - name: Record the rpm path
   ansible.builtin.set_fact:
-    cee_rpm_local: "{{ cee_rpm_candidates[0] }}"
+    cee_install_rpm_local: "{{ cee_install_rpm_candidates[0] }}"
 
 - name: Copy the CEE rpm to the target
   ansible.builtin.copy:
-    src: "{{ cee_rpm_local }}"
-    dest: /tmp/{{ cee_rpm_local | basename }}
+    src: "{{ cee_install_rpm_local }}"
+    dest: /tmp/{{ cee_install_rpm_local | basename }}
     owner: root
     group: root
     mode: "0644"
@@ -57,21 +57,21 @@
   # the support portal in the future, `localpkg_gpgcheck: true` (plus
   # importing the key on the target) would close this remaining gap.
   ansible.builtin.dnf:
-    name: /tmp/{{ cee_rpm_local | basename }}
+    name: /tmp/{{ cee_install_rpm_local | basename }}
     state: present
   become: true
   notify: Restart emc_cee
 
 - name: Remove the staged rpm
   ansible.builtin.file:
-    path: /tmp/{{ cee_rpm_local | basename }}
+    path: /tmp/{{ cee_install_rpm_local | basename }}
     state: absent
   become: true
 
 - name: Verify the CEE layout
   ansible.builtin.stat:
     path: "{{ item }}"
-  register: cee_layout
+  register: cee_install_layout
   loop:
     - /opt/CEEPack/emc_cee.exe
     - /opt/CEEPack/emc_cee_svc
@@ -87,7 +87,7 @@
       the install silently failed. The unit name this playbook manages is
       `emc_cee`; if the rpm now ships a different unit, update
       cee_configure and cee_verify to match.
-  loop: "{{ cee_layout.results }}"
+  loop: "{{ cee_install_layout.results }}"
   loop_control:
     label: "{{ item.item }}"
 
