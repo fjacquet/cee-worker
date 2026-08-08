@@ -1,0 +1,70 @@
+---
+# Endpoint rules, enforced before anything is written to the target host.
+# Each of these has cost real debugging time, so each fails with the
+# reason rather than a generic assertion error.
+
+- name: At least one endpoint must be defined
+  ansible.builtin.assert:
+    that:
+      - cee_endpoints | length > 0
+    fail_msg: >-
+      cee_endpoints must contain at least one entry. With Audit enabled and
+      no endpoint, CEE starts but publishes nowhere.
+
+- name: Every endpoint must declare name, host and port
+  ansible.builtin.assert:
+    that:
+      - item.name is defined and item.name | length > 0
+      - item.host is defined and item.host | length > 0
+      - item.port is defined
+    fail_msg: >-
+      Endpoint {{ item }} is incomplete. `name` becomes the mandatory
+      `name@` prefix in the rendered EndPoint; without it CEE ignores the
+      entry.
+  loop: "{{ cee_endpoints }}"
+  loop_control:
+    label: "{{ item.name | default('<unnamed>') }}"
+
+- name: Endpoint hosts must not be loopback
+  # NOTE: deliberately not looped. A failure inside ansible.builtin.assert
+  # with `loop:` is wrapped by Ansible as {"msg": "One or more items
+  # failed", "results": [...]}; the real per-item fail_msg only shows up
+  # nested in `results[n].msg`, not at the top level. The negative test in
+  # test_endpoint_validation.yml asserts on `ansible_failed_result.msg`
+  # directly (via the rescue block), so this check must fail as a single,
+  # non-looped assertion for that substring to be visible there.
+  ansible.builtin.assert:
+    that:
+      - cee_endpoints | selectattr('host', 'in', ['127.0.0.1', '::1', 'localhost']) | list | length == 0
+      - cee_endpoints | selectattr('host', 'match', '^127\\.') | list | length == 0
+    fail_msg: >-
+      Endpoint host(s) {{ cee_endpoints | map(attribute='host') | list }}
+      point at loopback. The Peer Software PowerStore guide explicitly
+      forbids a loopback address between CEE and its consumer, even when
+      they are co-hosted. Use the routable address of the host running
+      cee-exporter.
+
+- name: Endpoint hosts must be an IP address or a dotted FQDN
+  # NOTE: not looped, for the same reason as the loopback check above.
+  ansible.builtin.assert:
+    that:
+      - >-
+        cee_endpoints
+        | rejectattr('host', 'match', '^\\d{1,3}(\\.\\d{1,3}){3}$')
+        | rejectattr('host', 'search', '\\.')
+        | list | length == 0
+    fail_msg: >-
+      Endpoint host(s) {{ cee_endpoints | map(attribute='host') | list }}
+      include a bare hostname. CEE runs on a VM and cannot resolve Docker
+      Compose service names. Use an IP address or a fully-qualified
+      domain name.
+
+- name: Endpoint ports must be in range
+  ansible.builtin.assert:
+    that:
+      - item.port | int > 0
+      - item.port | int < 65536
+    fail_msg: "Endpoint '{{ item.name }}' port {{ item.port }} is out of range."
+  loop: "{{ cee_endpoints }}"
+  loop_control:
+    label: "{{ item.name }}"

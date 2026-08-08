@@ -1,0 +1,82 @@
+---
+- name: Loopback endpoints are rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_endpoints:
+      - name: ceeexporter
+        host: 127.0.0.1
+        port: 12229
+  tasks:
+    - name: Expect validation to fail
+      block:
+        - name: Validate
+          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "127.0.0.1 was accepted. The Peer guide forbids loopback here."
+      rescue:
+        - name: Confirm it failed for the loopback reason
+          ansible.builtin.assert:
+            that:
+              - "'loopback' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Validation failed, but not with the loopback message."
+
+- name: Compose service names are rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_endpoints:
+      - name: ceeexporter
+        host: cee-exporter
+        port: 12229
+  tasks:
+    - name: Expect validation to fail
+      block:
+        - name: Validate
+          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "A bare hostname was accepted; CEE on a VM cannot resolve compose DNS."
+      rescue:
+        - name: Confirm it failed for the resolvability reason
+          ansible.builtin.assert:
+            that:
+              - "'resolve' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Validation failed, but not with the resolvability message."
+
+- name: An empty endpoint list is rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_endpoints: []
+  tasks:
+    - name: Expect validation to fail
+      block:
+        - name: Validate
+          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "An empty endpoint list was accepted; Audit would have nowhere to publish."
+      rescue:
+        - name: Confirm it failed for the empty-list reason
+          ansible.builtin.assert:
+            that:
+              - "'at least one' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Validation failed, but not with the empty-list message."
+
+- name: A well-formed endpoint passes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_endpoints:
+      - name: ceeexporter
+        host: 10.10.10.10
+        port: 12229
+  tasks:
+    - name: Validate
+      ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
