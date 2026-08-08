@@ -83,9 +83,13 @@ The playbook runs four roles in order:
 | `cee_configure` | Validates endpoints, asserts exactly one sub-facility *and* that it is Audit, renders the config, opens the inbound port in firewalld, enables the unit |
 | `cee_verify` | Unit active, port listening, log written, no unsupported-platform error |
 
-Every role is idempotent. Rerunning after a fix converges rather than
-stacking state. A config change restarts `emc_cee` via handler; an
-unchanged config does not.
+Rerunning after a fix converges rather than stacking state. A config
+change restarts `emc_cee` via handler; an unchanged config does not.
+
+One caveat: `cee_install` stages the rpm to `/tmp` and deletes it again on
+every run, so those two tasks always report `changed` even when nothing
+was installed. dnf itself no-ops, so the host still converges — but a
+converged run reports `changed=2`, not `changed=0`.
 
 ## Upgrading CEE
 
@@ -120,9 +124,11 @@ it is the most likely cause on a stock RHEL 9 host. On the CEE host:
 
 Expected: `12228/tcp` in the port list. If it is missing, either
 `cee_manage_firewall` was set to `false`, or firewalld was not installed
-when the playbook ran (the run reports both cases explicitly — check the
-playbook output). Re-run the playbook with `cee_manage_firewall: true`, or
-open it by hand:
+when the playbook ran. Those two look different in the output: a missing
+firewalld prints an explicit "port unverified" message, while
+`cee_manage_firewall: false` only produces `skipping:` lines with no
+message at all — so check the variable as well as the output. Re-run the
+playbook with `cee_manage_firewall: true`, or open it by hand:
 
     firewall-cmd --permanent --add-port=12228/tcp && firewall-cmd --reload
 

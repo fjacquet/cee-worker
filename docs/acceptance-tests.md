@@ -424,10 +424,15 @@ makes this playbook safe to run during an incident.
 
 **Do** run `ansible-playbook site.yml` twice in a row, unchanged.
 
-**Expect** the second run reports `changed=0` and `emc_cee` is **not**
-restarted.
+**Expect** `emc_cee` is **not** restarted, and the second run's only
+changed tasks are `cee_install`'s rpm staging pair — the copy to `/tmp`
+and its removal. Those two report `changed` on every run by construction:
+the rpm is staged and deleted each time, so `changed=0` is not achievable
+today and expecting it would fail this test for the wrong reason. Anything
+changed beyond those two is a real convergence bug.
 
-**False pass** `changed=0` with tasks skipped is not convergence. Compare
+**False pass** a low `changed` count with tasks skipped is not
+convergence. Compare
 the two runs' task lists — if `cee_manage_firewall` or the facility gate
 skipped a block the second time, you measured a different playbook. Also
 check `/opt/CEEPack/` for accumulating `emc_cee_config.xml.*` backup files:
