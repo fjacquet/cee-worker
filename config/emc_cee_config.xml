@@ -4,7 +4,7 @@
     <Audit>
       <Configuration>
         <Enabled>1</Enabled>
-        <EndPoint>http://cee-exporter:12228</EndPoint>
+        <EndPoint>ceeexporter@http://cee-exporter:12228</EndPoint>
       </Configuration>
     </Audit>
     <CQM>

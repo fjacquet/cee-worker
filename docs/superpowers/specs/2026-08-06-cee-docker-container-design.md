@@ -8,7 +8,7 @@ Package Dell Common Event Enabler (CEE) 8.x for Linux (`emc_cee_RHEL-*.x86_64.rp
 
 ## Background
 
-CEE is installed via `rpm -i emc_cee_RHEL-<version>.x86_64.rpm`, per `doc/cee-8-x-linux-guide_en-us.pdf`. Installation defaults to `/opt/CEEPack`. Behavior (which CEPA sub-facilities are active, which PowerStore/consumer endpoints it talks to) is controlled entirely by `/opt/CEEPack/emc_cee_config.xml`. The service is managed with `emc_cee_svc {start|stop|restart}` and listens on `HttpPort` (default `12228`).
+CEE is installed via `rpm -i emc_cee_RHEL-<version>.x86_64.rpm`, per `docs/cee-8-x-linux-guide_en-us.pdf`. Installation defaults to `/opt/CEEPack`. Behavior (which CEPA sub-facilities are active, which PowerStore/consumer endpoints it talks to) is controlled entirely by `/opt/CEEPack/emc_cee_config.xml`. The service is managed with `emc_cee_svc {start|stop|restart}` and listens on `HttpPort` (default `12228`).
 
 Doc's stated system requirements list "Red Hat Enterprise version 7.x and higher, 64-bit" — Rocky Linux 9 is a RHEL-compatible rebuild, satisfying this.
 
@@ -97,3 +97,22 @@ GitHub Actions workflow `.github/workflows/publish.yml`:
 - Point a sample config's `EndPoint` at a reachable test HTTP listener, confirm CEE attempts delivery (visible in mounted logs).
 - Confirm `docker compose build` succeeds cleanly picking up rpm from `bin/`.
 - Confirm GHCR workflow builds and pushes on a test tag (dry run acceptable if no real release yet).
+
+---
+
+## Correction — 2026-08-08
+
+This spec stated that "Rocky Linux 9 is a RHEL-compatible rebuild,
+satisfying this". That is false. CEE reads `/etc/redhat-release` and
+self-terminates with "Platform is not supported / qualified" unless it
+sees the literal Red Hat string, so ABI compatibility is not sufficient.
+The container base moved to `registry.access.redhat.com/ubi9/ubi` in
+commit `4cd8007`.
+
+The containerized approach did not reach a working event path. CEE is now
+deployed to a RHEL 9 VM via Ansible; see
+`docs/superpowers/specs/2026-08-08-cee-ansible-deployment-design.md`. The
+container remains as a lab sandbox and is not a supported configuration.
+
+This note is appended rather than edited in place: the spec recorded a
+belief that testing disproved, and that record is the useful part.

@@ -1,8 +1,38 @@
 # cee-worker
 
-Dell Common Event Enabler (CEE) packaged as a Docker container on Rocky Linux 9, for testing against a PowerStore environment. The rpm shipped in bin/ is CEE **9.2.0.0**.
+Dell Common Event Enabler (CEE) 9.2.0.0 — deployed to RHEL 9 with Ansible
+for PowerStore-facing use, and packaged as a container for local
+experimentation. The rpm shipped in `bin/` is CEE **9.2.0.0**.
 
-## Quick start
+## Prerequisites
+
+- PowerStoreOS 4.1 or later
+- CEE 9.2 minimum
+- A genuine RHEL 9.x host. RHEL-compatible rebuilds are rejected: CEE
+  reads `/etc/redhat-release` and self-terminates unless it sees the
+  literal Red Hat string.
+- Time synchronised across the PowerStore array, the CEE host, and the
+  consumer host
+- SMB configured on PowerStore (NFS optional)
+- TCP 12228 reachable between PowerStore and the CEE host
+
+## Path 1: Ansible on RHEL 9 (supported)
+
+Dell supports CEE on a RHEL VM or bare metal, so this is the path for
+anything PowerStore-facing.
+
+See `docs/ansible-deployment.md` for prerequisites, setup, and the
+four-role playbook, and `docs/powerstore-setup-runbook.md` for configuring
+the PowerStore side and verifying the event path end to end.
+
+## Path 2: Container (lab sandbox, unsupported by Dell)
+
+The container is not a supported Dell configuration and has not produced
+a working end-to-end event path; use the Ansible path above for anything
+PowerStore-facing. It remains useful for local experimentation with the
+CEE process itself.
+
+### Quick start
 
     cp config/emc_cee_config.xml config/emc_cee_config.xml.bak  # optional, keep a copy
     docker compose up -d --build
@@ -14,7 +44,7 @@ wrapper), so `docker logs` will not show CEE's own log content. Use
 `docker exec <container> tail -f /opt/CEEPack/logs/emc_cee_svc.log`, or
 read the files directly from the host-mounted ./logs directory.
 
-## Pointing at a PowerStore target
+### Pointing at a PowerStore target
 
 Edit config/emc_cee_config.xml — set the relevant sub-facility's <Enabled>
 to 1 and its <EndPoint> to the consumer application address(es), per the
@@ -33,7 +63,7 @@ No rebuild needed for config-only changes.
 > security-related against the 9.x release notes/guide if available,
 > rather than assuming 8.x instructions apply verbatim.
 
-## Security posture (lab/testing defaults)
+### Security posture (lab/testing defaults)
 
 The sample config makes two tradeoffs that are fine for a local/lab
 container but should be revisited before exposing this beyond local
@@ -54,6 +84,10 @@ testing:
    one first — the Dockerfile globs bin/*.rpm and expects exactly one file).
 2. docker compose build --no-cache
 3. docker compose up -d
+
+The same `bin/` rpm serves both the container build above and the Ansible
+playbook (`docs/ansible-deployment.md`) — drop the new rpm into `bin/`
+once and either path picks it up.
 
 ## Pulling from GHCR
 
@@ -77,13 +111,15 @@ bundled dashboards are mounted from there, not copied).
     # edit .env: GHCR_OWNER, PSTORE1_HOSTNAME/USERNAME/PASSWORD
     docker compose -f docker-compose.test.yml up -d
 
-Services: `cee` (12228), `cee-exporter` (9228, metrics only — its 12228 CEPA
-listener stays internal), `pstore_exporter` (9446), `prometheus` (9090),
+Services: `cee` (12228), `cee-exporter` (9228 metrics, 12229 CEPA — maps
+to container 12228), `pstore_exporter` (9446), `prometheus` (9090),
 `grafana` (3000, admin/admin).
 
 To test the CEE → cee-exporter forward path, set one sub-facility's
-`<EndPoint>` in `config/emc_cee_config.xml` to `http://cee-exporter:12228`
-and `docker compose -f docker-compose.test.yml restart cee`.
+`<EndPoint>` in `config/emc_cee_config.xml` to
+`ceeexporter@http://cee-exporter:12228` — the `name@` prefix is mandatory
+and CEE ignores a bare URL — and `docker compose -f docker-compose.test.yml
+restart cee`.
 
 Run the CLI (one-shot, not a long-running service):
 
@@ -95,6 +131,9 @@ machines.
 
 Known gap: no Grafana dashboard yet for `cee-exporter` metrics — Prometheus
 scrape only, browse via its UI or `/metrics` directly.
+
+For the full PowerStore-facing end-to-end verification (not just this
+local test stack), see `docs/powerstore-setup-runbook.md`.
 
 ## Out of scope
 

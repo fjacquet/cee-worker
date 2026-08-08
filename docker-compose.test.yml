@@ -25,13 +25,13 @@ services:
   cee-exporter:
     image: ghcr.io/${GHCR_OWNER:-fjacquet}/cee-exporter:${CEE_EXPORTER_TAG:-sha-5571a41}
     container_name: test_cee_exporter
-    # 12228 not published to host: this stack's own `cee` service already
-    # claims host port 12228 for external CEPA sources, so publishing it
-    # here too would collide. cee reaches cee-exporter over the compose
-    # network at http://cee-exporter:12228 instead (see
-    # config/emc_cee_config.xml's Audit EndPoint).
+    # 12229:12228 rather than 12228:12228. CEE's inbound listener owns
+    # 12228 by specification, and with CEE now on a VM its consumer must
+    # be reachable off-host. Publishing the exporter on 12229 lets the CEE
+    # host and the Docker host be the same machine without colliding.
     ports:
       - "9228:9228"
+      - "12229:12228"
     volumes:
       - ./cee-exporter-config.toml:/etc/cee-exporter/config.toml:ro
       - ./logs/cee-exporter:/var/log/cee-exporter
