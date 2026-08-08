@@ -45,7 +45,9 @@
     state: stopped
     timeout: 3
   register: cee_port_free
-  failed_when: false
+  # Use ignore_errors rather than failed_when: false to preserve the module's real
+  # failure status so the downstream 'is failed' check can detect port conflicts
+  ignore_errors: true
 
 - name: Report a pre-existing listener on the CEE port
   ansible.builtin.debug:
