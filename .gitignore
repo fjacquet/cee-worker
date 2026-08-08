@@ -5,3 +5,7 @@ logs/*
 state/*
 !state/.gitkeep
 .env
+
+# ansible: real inventory and vars hold site addresses
+ansible/inventory/hosts.yml
+ansible/group_vars/all.yml
