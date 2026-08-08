@@ -18,6 +18,15 @@ cee_endpoints:
     host: 10.10.10.10     # the Docker host running cee-exporter
     port: 12229           # host-published port, maps to container 12228
 
+# Open cee_http_port in firewalld on the CEE host. RHEL 9 ships firewalld
+# enabled with only ssh allowed, and cee_verify probes 127.0.0.1 — a path
+# firewalld does not filter — so a firewalled host passes every check while
+# dropping every event PowerStore sends. Leave this true unless a firewall
+# is managed elsewhere (a network appliance, or nftables under some other
+# tool); in that case set it false and open the port yourself. Requires the
+# ansible.posix collection: see ansible/requirements.yml.
+cee_manage_firewall: true
+
 # Restrict which sources may post events. 1 is the vendor default and the
 # right posture on a real network. Set to 0 only to isolate a bring-up
 # problem, then set it back.

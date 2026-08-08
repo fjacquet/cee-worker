@@ -1,5 +1,8 @@
 ---
-- name: Install UBI 9 repositories
+- name: Install UBI 9 repositories, disabled by default
+  # The repo definitions land on the host permanently but ship
+  # `enabled = 0`; the dnf task below switches them on for its own
+  # transaction with `enablerepo`. See files/ubi.repo for why.
   ansible.builtin.copy:
     src: ubi.repo
     dest: /etc/yum.repos.d/ubi.repo
@@ -56,9 +59,19 @@
   # cannot be vendored into this repo. If that key is obtained through
   # the support portal in the future, `localpkg_gpgcheck: true` (plus
   # importing the key on the target) would close this remaining gap.
+  #
+  # enablerepo turns on the two UBI repos for this transaction only. They
+  # are defined on the host with `enabled = 0`, so the depsolver sees the
+  # same package set it would have seen with `enabled = 1` — dnf loads a
+  # disabled repo's metadata as soon as --enablerepo names it — while
+  # nothing outside this transaction has its package sources rewritten.
+  # Requires outbound HTTPS to cdn-ubi.redhat.com from the target host.
   ansible.builtin.dnf:
     name: /tmp/{{ cee_install_rpm_local | basename }}
     state: present
+    enablerepo:
+      - ubi-9-baseos-rpms
+      - ubi-9-appstream-rpms
   become: true
   notify: Restart emc_cee
 

@@ -26,12 +26,42 @@ Dell CEE build and the useful version to know is CEE's own.
   and three-stage end-to-end verification
 - Prerequisites documented for the first time: PowerStoreOS 4.1+, CEE 9.2
   minimum, genuine RHEL 9.x, time synchronisation, TCP 12228
+- `cee_configure` opens the CEE inbound port in firewalld, behind a
+  `cee_manage_firewall` toggle. RHEL 9 ships firewalld enabled with only
+  ssh allowed, and nothing on the deployment path opened 12228
+- `ansible/requirements.yml` declares the `ansible.posix` collection,
+  which the firewalld task needs and ansible-core does not ship. CI
+  installs it before the syntax check and the lint step
+- `cee_preflight` asserts every required variable up front, naming each
+  one and pointing at `group_vars/all.yml.example`. The roles deliberately
+  ship no `defaults/main.yml`: an explicit refusal beats a silent default
+  that renders a wrong config
+- `docs/acceptance-tests.md` — the test plan for the first live
+  deployment, separating what CI already proves from what has never run
+  against real hardware, and giving each test a way to tell a real failure
+  from a false pass
+- Outbound HTTPS to `cdn-ubi.redhat.com` documented as a prerequisite; the
+  dependency resolution has always needed it and it appeared nowhere
 
 ### Fixed
 
 - `<EndPoint>` now renders as `name@http://host:port`. The consumer-name
   prefix is mandatory per the Dell CEE guide and the Peer Software
   PowerStore guide; the previous bare URL was silently ignored by CEE
+- A stock RHEL 9 host produced a completely green playbook run while
+  dropping every event PowerStore sent: `cee_verify` probes `127.0.0.1`,
+  which firewalld does not filter, so the one check that would have caught
+  a closed 12228 could not see it
+- `cee_configure` asserted that exactly one sub-facility was enabled but
+  the template gates `<EndPoint>` on Audit specifically, so `vcaps: true,
+  audit: false` passed every check and rendered `<Enabled>1</Enabled>`
+  with an empty `<EndPoint></EndPoint>` — CEE started, verification
+  passed, nothing was ever forwarded. Audit is now asserted by name
+- `ansible.cfg` set `stdout_callback = yaml`, which resolved to
+  `community.general.yaml`; that plugin was removed in community.general
+  12.0.0, so `ansible-playbook site.yml` aborted before its first task on
+  a control node with a current `ansible` package. Replaced with
+  ansible-core's own `callback_result_format = yaml`
 - README described the container base as Rocky Linux 9; it has been UBI9
   since `4cd8007`, because CEE rejects RHEL rebuilds
 
@@ -42,6 +72,13 @@ Dell CEE build and the useful version to know is CEE's own.
   CEE host and the Docker host be the same machine
 - README restructured around two paths: Ansible on RHEL 9 (supported) and
   the container (lab sandbox, not a supported Dell configuration)
+- The UBI 9 repositories are installed disabled and switched on with
+  `enablerepo` for the install transaction alone. Leaving them enabled
+  rewrote the host's package sources permanently, and on an entitled host
+  layered the public CDN over the subscription repos
+- `inventory/hosts.yml.example` logs in as an ordinary user rather than
+  `root`; every role already declares `become: true`, and the example now
+  says so — along with how to accept the host key before an unattended run
 
 ## [9.2.0.1] - 2026-08-07
 

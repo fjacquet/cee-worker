@@ -8,13 +8,23 @@ introspected from a live array. That is deferred.
 Complete `docs/ansible-deployment.md` first — CEE must be running and
 listening before PowerStore has anywhere to publish to.
 
+If this is the first time this procedure has been carried out against a
+real array, run it inside the plan in `docs/acceptance-tests.md`, which
+covers what a passing stage does and does not prove. Stages 1–3 below are
+AT-8, AT-10 and AT-11 there.
+
 ## Prerequisites
 
 - PowerStoreOS 4.1 or later
 - CEE 9.2 or later, deployed and verified
 - Time synchronised across the array, the CEE host, and the consumer host
 - SMB configured on the NAS server; NFS optional
-- TCP 12228 open from the array to the CEE host
+- TCP 12228 open from the array to the CEE host — including **on the CEE
+  host's own firewall**. RHEL 9 ships firewalld enabled with only ssh
+  allowed; the Ansible playbook opens the port when `cee_manage_firewall`
+  is true, but confirm it with `firewall-cmd --list-ports` before
+  configuring the array. Nothing in Stage 1 detects a closed port, because
+  it probes loopback.
 
 ## Procedure
 
@@ -57,7 +67,7 @@ flowchart TD
 
     F1["Fix CEE first.<br/>Check Http/ServerEnabled=1 and journalctl -u emc_cee"]
     F2["Consumer, network or port mapping.<br/>Check the 12229:12228 mapping and the firewall"]
-    F3["CEE config or PowerStore.<br/>Check the name@ prefix, then Events Publishing on<br/>both the NAS server and the filesystem"]
+    F3["CEE host firewall, CEE config, or PowerStore.<br/>Check 12228/tcp is open, then the access list,<br/>then the name@ prefix, then Events Publishing on<br/>both the NAS server and the filesystem"]
     OK["Path verified end to end"]
 
     S1 -->|pass| S2
@@ -146,11 +156,36 @@ Expected: corresponding `CreateFile` and `DeleteFile` events appear in
 cee-exporter's output (`/var/log/cee-exporter/audit.evtx` in the test
 stack) within a few seconds.
 
-If Stage 2 passed and Stage 3 did not, the problem is on the PowerStore
-side: recheck that Events Publishing is enabled on both the NAS server
-*and* the individual filesystem, that the protocol selection matches how
-the client mounted, and that the CEE host address in the publishing pool
-is correct.
+If Stage 2 passed and Stage 3 did not, the problem is on the inbound leg —
+PowerStore to CEE. Check in this order, cheapest first:
+
+1. **The CEE host's firewall.** On the CEE host:
+
+       firewall-cmd --list-ports
+       firewall-cmd --state
+
+   Expected: `12228/tcp` present, state `running`. A stock RHEL 9 host
+   blocks the port, and *every check in Stage 1 still passes* because
+   `cee_verify` and `ss -lntp` both look at the local socket, which
+   firewalld does not filter. This is the single most likely cause of a
+   Stage 3 failure that follows a clean Stage 1 and Stage 2.
+
+   Confirm reachability from off-host rather than trusting the rule list —
+   from any machine on the array's side of the network:
+
+       nc -vz <cee-host> 12228
+
+2. **CEE's access list.** `AccessListEnabled` is 1 by default and only
+   the addresses in `cee_access_list` may post. A NAS server publishing
+   from an address that is not on that list is refused at CEE, not at the
+   firewall. Check `/opt/CEEPack/logs/*.log` on the CEE host — a rejected
+   source is logged; a firewalled one leaves no trace at all. That
+   difference is the fastest way to tell the two apart.
+
+3. **The PowerStore side.** Recheck that Events Publishing is enabled on
+   both the NAS server *and* the individual filesystem, that the protocol
+   selection matches how the client mounted, and that the CEE host address
+   in the publishing pool is correct.
 
 ## Notes
 
