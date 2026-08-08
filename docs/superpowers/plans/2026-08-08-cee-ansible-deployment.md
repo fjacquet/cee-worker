@@ -26,6 +26,8 @@ These apply to every task. Values are copied verbatim from the spec and from the
 - Only the **Audit** sub-facility is enabled. CQM, Backup, CARA, Index, VCAPS stay `0`.
 - Config schema version attribute is `<CEEConfig version="9.2.0.0">`.
 - Changelog format is Keep a Changelog. Versioning tracks CEE's four-part version (`vX.Y.Z.W`), **not** SemVer.
+- **A negative test's canary message must share no substring with what its `rescue` asserts on.** These tests use a `block` whose last task is a canary `ansible.builtin.fail` ("should be unreachable"), with a `rescue` that asserts a substring of the real `fail_msg` appears in `ansible_failed_result.msg`. If the canary's own message contains that substring, deleting the validation rule lets execution fall through to the canary, whose message satisfies the assertion — the test passes anyway and catches nothing. Every such test must be mutation-checked: disable its rule, confirm the test fails, restore. Discovered during Task 3 and found to affect Task 2 as well.
+- **Signature verification.** Do not pass `disable_gpg_check: true` to the `dnf` module. It maps to `dnf --nogpgcheck`, which is transaction-wide and suppresses verification of the UBI-sourced dependencies too, nullifying `gpgcheck = 1` in `ubi.repo`. The CEE rpm is OpenPGP-signed (RSA/SHA256, fingerprint `F85417992FA59E0A84F1E2CCF4A476D807DD4467`), but Dell's public key is not obtainable outside their authenticated support portal, so the local rpm installs unverified under dnf's `localpkg_gpgcheck` default while repo dependencies stay verified.
 - **Looped `assert` hides its own `fail_msg`.** When `ansible.builtin.assert` uses `loop:`, Ansible wraps the failure as `{"msg": "One or more items failed", "results": [...]}` and the per-item `fail_msg` appears only nested under `results[n].msg`. Any negative test that matches a substring of `fail_msg` against `ansible_failed_result.msg` must therefore assert against a **non-looped** check. Use a `selectattr`/`rejectattr` formulation over the whole list instead of a per-item loop wherever a test asserts on the message text. This was discovered during Task 2; the original plan text specified looped asserts that could not pass their own tests.
 
 ### One sharpening of the spec
@@ -497,7 +499,7 @@ Create `ansible/tests/test_endpoint_validation.yml`:
           ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
         - name: Should be unreachable
           ansible.builtin.fail:
-            msg: "127.0.0.1 was accepted. The Peer guide forbids loopback here."
+            msg: "Validation did not reject 127.0.0.1."
       rescue:
         - name: Confirm it failed for the loopback reason
           ansible.builtin.assert:
@@ -521,7 +523,7 @@ Create `ansible/tests/test_endpoint_validation.yml`:
           ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
         - name: Should be unreachable
           ansible.builtin.fail:
-            msg: "A bare hostname was accepted; CEE on a VM cannot resolve compose DNS."
+            msg: "Validation did not reject the bare hostname 'cee-exporter'."
       rescue:
         - name: Confirm it failed for the resolvability reason
           ansible.builtin.assert:
@@ -698,12 +700,12 @@ Create `ansible/tests/test_platform_assertions.yml`:
           ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform.yml
         - name: Should be unreachable
           ansible.builtin.fail:
-            msg: "Rocky was accepted. CEE self-terminates on non-Red Hat hosts."
+            msg: "Validation did not reject the Rocky distribution."
       rescue:
         - name: Confirm it failed for the distribution reason
           ansible.builtin.assert:
             that:
-              - "'Red Hat' in (ansible_failed_result.msg | default('') | string)"
+              - "'/etc/redhat-release' in (ansible_failed_result.msg | default('') | string)"
             fail_msg: "Failed, but not with the genuine-Red-Hat message."
 
 - name: RHEL 8 is rejected
@@ -720,12 +722,12 @@ Create `ansible/tests/test_platform_assertions.yml`:
           ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform.yml
         - name: Should be unreachable
           ansible.builtin.fail:
-            msg: "RHEL 8 was accepted; the guide requires 9.x for CEE 9.2."
+            msg: "Validation did not reject major version 8."
       rescue:
         - name: Confirm it failed for the version reason
           ansible.builtin.assert:
             that:
-              - "'9' in (ansible_failed_result.msg | default('') | string)"
+              - "'requires RHEL 9.x' in (ansible_failed_result.msg | default('') | string)"
             fail_msg: "Failed, but not with the major-version message."
 
 - name: Genuine RHEL 9 passes
@@ -940,7 +942,6 @@ Create `ansible/roles/cee_install/tasks/main.yml`:
   ansible.builtin.dnf:
     name: /tmp/{{ cee_rpm_local | basename }}
     state: present
-    disable_gpg_check: true
   become: true
   notify: Restart emc_cee
 
