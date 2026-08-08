@@ -1,0 +1,41 @@
+---
+name: Ansible
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible and linters
+        run: pip install "ansible-core>=2.17" ansible-lint yamllint
+
+      - name: yamllint
+        run: yamllint ansible/ .github/
+
+      - name: Seed inventory and vars from the committed examples
+        run: |
+          cp ansible/inventory/hosts.yml.example ansible/inventory/hosts.yml
+          cp ansible/group_vars/all.yml.example ansible/group_vars/all.yml
+
+      - name: Syntax check
+        working-directory: ansible
+        run: ansible-playbook --syntax-check site.yml
+
+      - name: ansible-lint
+        run: ansible-lint ansible/
+
+      - name: Run the localhost test suite
+        run: ansible/tests/run.sh
