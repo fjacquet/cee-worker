@@ -1,0 +1,12 @@
+---
+# Copy to hosts.yml and edit. hosts.yml is gitignored.
+#
+# The CEE host must be genuine RHEL 9 — the playbook refuses to continue
+# otherwise, because CEE self-terminates on RHEL rebuilds.
+all:
+  children:
+    cee:
+      hosts:
+        cee01.example.com:
+          ansible_host: 10.10.10.20
+          ansible_user: root
