@@ -95,9 +95,15 @@ happens to be installed on one developer's machine.
 throwaway collections path:
 
     git clone <repo> && cd <repo>
-    ANSIBLE_COLLECTIONS_PATH=$(mktemp -d) \
-      ansible-galaxy collection install -r ansible/requirements.yml
-    cd ansible && ansible-playbook --syntax-check site.yml
+    export ANSIBLE_COLLECTIONS_PATH="$(mktemp -d)"
+    ansible-galaxy collection install -r ansible/requirements.yml
+    (cd ansible && ansible-playbook --syntax-check site.yml)
+
+`export` on its own line is load-bearing. A `VAR=... command` prefix
+applies to that one command only, so writing it that way would scope the
+throwaway path to `ansible-galaxy` and let the syntax check fall back to
+your normal collections — which is exactly the false pass described
+below, wearing the costume of the fix for it.
 
 **Expect** the collection installs, and the syntax check exits 0.
 
@@ -306,10 +312,18 @@ part of this test that proves anything.** If you cannot run it from the
 array's subnet, run it from the closest host you can and treat the
 remaining segment as untested.
 
-Also test the negative path deliberately, once: set
-`cee_manage_firewall: false`, re-run, and confirm the playbook still
-reports success while the off-host `nc` now fails. That is what the
-toggle costs, and an operator should have seen it once.
+Also test the negative path deliberately, once. **Remove the rule first,
+or this test cannot fail:** `cee_configure` only ever adds the port
+(`state: enabled`, `permanent: true`) and nothing removes it, so simply
+flipping the toggle off and re-running leaves the port open from the
+previous run and the off-host `nc` still succeeds. On the CEE host:
+
+    firewall-cmd --permanent --remove-port=12228/tcp && firewall-cmd --reload
+
+Then set `cee_manage_firewall: false`, re-run, and confirm the playbook
+still reports success while the off-host `nc` now fails. That is what the
+toggle costs, and an operator should have seen it once. Re-run with the
+toggle back on to restore the port.
 
 ---
 
