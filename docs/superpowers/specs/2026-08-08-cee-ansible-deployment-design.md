@@ -63,17 +63,27 @@ Not previously recorded anywhere in this repo:
 
 ## Architecture
 
-```
-PowerStore NAS server
-   │  CEPA events (source API, TCP 12228)
-   ▼
-CEE  (RHEL 9 VM, systemd emc_cee, :12228 inbound)   ← Ansible manages this
-   │  <EndPoint>ceeexporter@http://<docker-host>:12229
-   ▼
-cee-exporter (container, :12228 internal → :12229 host, metrics :9228)
-   │
-   ├─► evtx / GELF output
-   └─► Prometheus :9090 ──► Grafana :3000
+```mermaid
+flowchart TD
+    PS["PowerStore NAS server"]
+
+    subgraph VM["RHEL 9 VM — managed by Ansible"]
+        CEE["CEE 9.2.0.0<br/>systemd emc_cee<br/>inbound :12228"]
+    end
+
+    subgraph DOCKER["Docker host — compose"]
+        EXP["cee-exporter<br/>CEPA :12228 internal / :12229 host<br/>metrics :9228"]
+        PROM["Prometheus :9090"]
+        GRAF["Grafana :3000"]
+    end
+
+    OUT["evtx / GELF output"]
+
+    PS -->|"CEPA events, source API, TCP 12228"| CEE
+    CEE -->|"EndPoint ceeexporter@http://docker-host:12229"| EXP
+    EXP --> OUT
+    EXP -->|"scrape :9228"| PROM
+    PROM --> GRAF
 ```
 
 Hybrid by design. CEE moves to a VM because it resists containerization. The

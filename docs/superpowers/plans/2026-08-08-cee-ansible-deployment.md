@@ -1414,6 +1414,25 @@ Perform these in order. Each step depends on the previous one.
 Three stages, in order. Each isolates one leg, so a failure tells you
 which side is broken rather than only that something is.
 
+```mermaid
+flowchart TD
+    S1["Stage 1 — CEE healthy<br/>unit active, :12228 listening, log written"]
+    S2["Stage 2 — consumer reachable<br/>PUT synthetic event from the CEE host"]
+    S3["Stage 3 — full path<br/>touch a file on a monitored filesystem"]
+
+    F1["Fix CEE first.<br/>Check Http/ServerEnabled=1 and journalctl -u emc_cee"]
+    F2["Consumer, network or port mapping.<br/>Check the 12229:12228 mapping and the firewall"]
+    F3["CEE config or PowerStore.<br/>Check the name@ prefix, then Events Publishing on<br/>both the NAS server and the filesystem"]
+    OK["Path verified end to end"]
+
+    S1 -->|pass| S2
+    S1 -->|fail| F1
+    S2 -->|pass| S3
+    S2 -->|fail| F2
+    S3 -->|pass| OK
+    S3 -->|fail| F3
+```
+
 ### Stage 1 — CEE is healthy
 
 Already asserted by the `cee_verify` role at the end of the playbook run.
