@@ -41,6 +41,10 @@ Stated plainly, because the rest of this plan is calibrated against it:
 - **No event has ever travelled the full path.** Not
   PowerStore → CEE, and not CEE → cee-exporter. The runbook's Stage 2
   probe exercises the consumer alone.
+- **No `.evtx` this repo produced has ever been read by Windows.** The
+  file is written by a non-Windows build through a Go encoder, and every
+  check available on macOS or RHEL passes identically on a valid file and
+  on a corrupt one. AT-14 exists for this and needs a Windows host.
 - **The GitHub Actions workflow has never run.** `.github/workflows/ansible.yml`
   has never completed on any runner.
 - **The `ansible-galaxy collection install` step has never been exercised
@@ -64,6 +68,7 @@ flowchart TD
     EP["EndPoint<br/>name@http://host:12229<br/>first entry gates all"]
     EXP["cee-exporter<br/>in 12229, metrics 9228"]
     PROM["Prometheus<br/>scrapes 9228"]
+    EVTX["audit.evtx on disk<br/>Go encoder, not the Win32 API"]
 
     FS -->|"AT-11 file create or delete"| NAS
     NAS -->|"AT-8 CEPA POST to 12228"| FW
@@ -72,12 +77,17 @@ flowchart TD
     CEE -->|"AT-10 forward"| EP
     EP -->|"AT-10 consumer reachable"| EXP
     EXP -->|"AT-12 scrape"| PROM
+    EXP -->|"AT-14 Windows reads it back"| EVTX
 ```
 
 Two hops leave no trace anywhere when they fail. A packet dropped by
 firewalld is invisible to CEE — no log line, no counter. A first
 `<EndPoint>` that is down silently suppresses delivery to *every* other
 endpoint. Both are covered below.
+
+The `audit.evtx` branch is not a hop — the events have already arrived by
+then. It is drawn because the file's *validity* is a separate claim from
+its existence, and only a Windows host can settle it.
 
 ## Acceptance tests
 
@@ -497,6 +507,68 @@ check `/opt/CEEPack/` for accumulating `emc_cee_config.xml.*` backup files:
 the template task uses `backup: true`, so a new backup on every run means
 the template is rendering differently each time even though the outcome
 looks stable.
+
+---
+
+### AT-14 — Windows can actually read the `.evtx` we produced
+
+**Proves** the one claim nothing else in this plan can falsify. Run it any
+time after AT-11 has produced a file; it does not depend on AT-12 or AT-13.
+
+Requires a Windows host. Copy `logs/cee-exporter/audit.evtx` to it — do
+not open it over a share while the exporter is writing.
+
+**Why this test exists.** The `.evtx` is written by a *non-Windows* build
+using a Go encoder, not by the Win32 API. Every check elsewhere in this
+plan — a green Stage 3, a climbing `cee_events_written_total`, a file that
+grows on disk — passes identically whether the bytes are valid or garbage.
+Nothing on the RHEL host or the Docker host can tell you which you have.
+
+This is not hypothetical. Every `.evtx` written by a non-Windows
+cee-exporter before 5.1.0 was rejected by Windows as corrupt, the files
+could not be repaired, and the defect shipped in every release since v2 —
+because nothing upstream had ever read one back. We pin 5.1.0 precisely
+because of that fix. **This test is how we avoid repeating their mistake
+rather than inheriting the belief that it is fixed.**
+
+**Do** on the Windows host, in PowerShell:
+
+    Get-WinEvent -Path .\audit.evtx |
+      Select-Object -First 5 TimeCreated, Id, ProviderName
+
+Then the same file through the older reader:
+
+    wevtutil qe audit.evtx /lf:true /c:5 /f:text
+
+**Expect** `Get-WinEvent` returns records with `Id` 4663 and 4660, a
+populated `ProviderName`, and a `TimeCreated` that is not the zero value.
+Event Viewer should open the file through **Action → Open Saved Log**
+without complaint.
+
+**False pass** — and this one is specific and load-bearing. **The two
+readers disagree, and only one of them is trustworthy here.** `wevtutil`
+accepted the malformed pre-5.1.0 files without error and exited `0`; it
+was `Get-WinEvent` that threw, and that disagreement is what localised the
+bug upstream. So a clean `wevtutil` run proves nothing on its own. Run
+both, and treat `Get-WinEvent` as the verdict.
+
+Two more ways this passes without meaning anything:
+
+- **An empty or record-free file.** `Get-WinEvent` on a file with no
+  records raises "No events were found", which is not a corruption error
+  and is easy to read as success. Confirm the record count is what AT-11
+  generated; remember the writer opens with `O_TRUNC`, so a container
+  restart between AT-11 and here empties the file.
+- **A blank `ProviderName` or a zero `TimeCreated`.** Both were symptoms of
+  the upstream encoder defect and both can still render without an
+  outright corruption error. Check the field values, not just that a row
+  came back.
+
+**If it fails** report it upstream with the file attached — that repo has
+no non-Windows readback test, which is the gap this test covers on both
+our behalf and theirs. Record the exact reader, the exact message, and the
+`cee_build_info{version=...}` value from AT-12, so the failure is pinned
+to a build.
 
 ## Recording results
 

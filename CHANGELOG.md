@@ -49,6 +49,15 @@ Dell CEE build and the useful version to know is CEE's own.
   from a false pass
 - Outbound HTTPS to `cdn-ubi.redhat.com` documented as a prerequisite; the
   dependency resolution has always needed it and it appeared nowhere
+- AT-14 reads the produced `audit.evtx` back on a Windows host, the only
+  test here that can falsify the claim that the file is valid. The `.evtx`
+  is written by a non-Windows build through a Go encoder, so a green
+  Stage 3, a climbing `cee_events_written_total` and a file that grows on
+  disk all pass identically whether the bytes are sound or corrupt. It
+  requires running both `Get-WinEvent` and `wevtutil`, because upstream
+  found the two disagree: `wevtutil` read the malformed pre-5.1.0 files
+  and exited 0 while `Get-WinEvent` rejected them, and that disagreement
+  is what localised the bug. `Get-WinEvent` is the verdict
 - AT-12 now reads the whole `cee_*` metric set rather than
   `cee_events_received_total` alone: `cee_events_written_total`,
   `cee_events_dropped_total`, `cee_writer_errors_total`, `cee_queue_depth`
