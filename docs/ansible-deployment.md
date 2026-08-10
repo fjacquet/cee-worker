@@ -187,8 +187,11 @@ What is already known and documented, for when that branch starts:
     `.log` files appear on disk after install or service start. CEE logs
     exclusively to the Windows Application Event Log, under two sources:
     `EMC CEE` and `CEE Monitor`. Phase 2's verification step for Windows
-    must query the Event Log (e.g. `Get-WinEvent`), not search for a log
-    file the way `cee_verify`'s Linux role does.
+    must query the Event Log (e.g. `Get-WinEvent`) — CEE 9.2.0.0 writes no
+    file-based log on Linux either, so this is not a Windows-specific
+    workaround; `cee_verify`'s Linux role reads `journalctl -u emc_cee`
+    for the same reason, and Windows needs its own equivalent mechanism
+    rather than a file search on either platform.
 
 ## Run
 
@@ -203,7 +206,7 @@ The playbook runs five roles in order:
 | `cee_preflight` | Host is genuine RHEL 9 or SLES 15 (`ansible_os_family` routes to `RedHat.yml`/`Suse.yml`, `ansible_distribution` judges — Rocky/Alma and openSUSE are rejected by name); clock is synchronised; reports anything already bound to 12228 |
 | `cee_install` | RHEL: drops the UBI 9 repo definitions (disabled), installs the rpm with those repos enabled for that transaction only. SLES: `zypper` installs the rpm directly, no repo setup needed. Both verify `/opt/CEEPack` and the `emc_cee` unit exist |
 | `cee_configure` | Validates endpoints, asserts exactly one sub-facility *and* that it is Audit, renders the config, opens the inbound port in firewalld, enables the unit — identical on RHEL and SLES |
-| `cee_verify` | Unit active, port listening, log written, no unsupported-platform error — identical on RHEL and SLES |
+| `cee_verify` | Unit active, port listening, journal shows CEE's own output, no unsupported-platform error — identical on RHEL and SLES |
 
 Rerunning after a fix converges rather than stacking state. A config
 change restarts `emc_cee` via handler; an unchanged config does not.

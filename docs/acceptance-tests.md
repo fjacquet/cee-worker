@@ -301,18 +301,29 @@ CEE's own platform check passed — not just Ansible's.
     systemctl is-active emc_cee
     systemctl cat emc_cee | head -20
     ss -lntp | grep 12228
-    grep -i 'platform' /opt/CEEPack/logs/*.log
+    systemctl show emc_cee -p ActiveEnterTimestamp
+    journalctl -u emc_cee --since "<ActiveEnterTimestamp>" | grep -i 'platform'
+
+CEE 9.2.0.0 writes no log file on Linux — `/opt/CEEPack/logs/` stays
+empty even with `Debug=1 Verbose=1`; the process holds no log file
+descriptor. Its entire output goes to stdout, which systemd captures
+into the journal. That is why `cee_verify` reads `journalctl -u emc_cee`
+rather than looking for a file.
 
 **Expect** `active`; the unit is the rpm's, unmodified; a listener on
 12228 owned by `emc_cee.exe`; and **no** `Platform is not supported`
-anywhere in the log.
+anywhere in the journal output since the unit's current start.
 
 **False pass** `systemctl is-active` returning `active` for a unit with
 `Restart=` and a crash loop is a known trap — check `systemctl status
 emc_cee` for a restart count and `journalctl -u emc_cee` for repeated
-starts. An empty log directory is not a pass either; it was the container's
-exact failure signature. `cee_verify` asserts a log file exists, but a log
-that exists and is empty still needs a human to look at it once.
+starts. A second trap is specific to the journal: reading it without
+`--since <ActiveEnterTimestamp>` can match a `Platform is not supported`
+line left over from an *earlier* boot or an earlier, since-fixed config,
+making a currently-healthy unit look rejected (or, worse, hiding a
+current rejection behind an old clean run). That is exactly why
+`cee_verify` anchors its read to the unit's own `ActiveEnterTimestamp`
+instead of scanning the whole journal.
 
 ---
 
