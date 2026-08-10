@@ -9,3 +9,15 @@
 collections:
   - name: ansible.posix
     version: ">=1.5.4"
+  # community.general supplies community.general.zypper, used by the SLES
+  # branch of cee_install. Like ansible.posix it is not bundled with
+  # ansible-core, so its absence breaks --syntax-check and ansible-lint on
+  # a clean checkout, not just deployment.
+  #
+  # Floor is 12.0.0 on purpose: that release removed the community.general
+  # yaml stdout callback, and ansible.cfg documents having been bitten by
+  # a control node where it was still expected. Requiring >= 12 makes the
+  # removal a stated assumption rather than an accident of what happens to
+  # be installed.
+  - name: community.general
+    version: ">=12.0.0"

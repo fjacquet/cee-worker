@@ -1,0 +1,47 @@
+---
+# Post-install cleanup and layout check, shared by the RHEL and SLES
+# branches. Both rpms ship an identical payload — same /opt/CEEPack, same
+# unit file — so there is nothing to branch on here.
+#
+# Consumes cee_install_rpm_local and cee_log_path.
+#
+# The staged-rpm removal lives here rather than in the locate file because
+# it can only run once the package module has consumed the file.
+
+- name: Remove the staged rpm
+  ansible.builtin.file:
+    path: /tmp/{{ cee_install_rpm_local | basename }}
+    state: absent
+  become: true
+
+- name: Verify the CEE layout
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: cee_install_layout
+  loop:
+    - /opt/CEEPack/emc_cee.exe
+    - /opt/CEEPack/emc_cee_svc
+    - /etc/systemd/system/emc_cee.service
+  become: true
+
+- name: Every expected CEE path must exist
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: >-
+      {{ item.item }} is missing after install. The rpm layout changed, or
+      the install silently failed. The unit name this playbook manages is
+      `emc_cee`; if the rpm now ships a different unit, update
+      cee_configure and cee_verify to match.
+  loop: "{{ cee_install_layout.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Ensure the log directory exists and is writable by the service user
+  ansible.builtin.file:
+    path: "{{ cee_log_path }}"
+    state: directory
+    owner: ceesvc
+    group: ceesvc
+    mode: "0750"
+  become: true

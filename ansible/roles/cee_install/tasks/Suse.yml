@@ -1,0 +1,39 @@
+---
+# SLES branch. Deliberately shorter than RedHat.yml, and the difference is
+# not an oversight.
+#
+# There is no repository setup here. The RHEL branch installs ubi.repo and
+# enables it for one transaction because a minimal RHEL host may lack the
+# dependencies dnf needs to resolve. The SLES rpm needs nothing of the
+# sort: boost 1.88, openssl 3, libcurl 4 and jansson 4 all ship inside
+# /opt/CEEPack, so the external dependency surface is glibc, ld-linux and
+# a shell — present on any SLES 15 install. Verified by comparing the
+# declared requires of both rpms: identical bar /bin/bash against
+# /usr/bin/bash.
+
+- name: Look for the SLES build of the rpm
+  ansible.builtin.set_fact:
+    cee_install_rpm_glob: emc_cee_SLES-*.x86_64.rpm
+
+- name: Locate and stage the rpm
+  ansible.builtin.include_tasks: install_linux_locate.yml
+
+- name: Install CEE
+  # Deliberately no disable_gpg_check, for the same reason the RHEL branch
+  # avoids it: the option is transaction-wide, so it would also suppress
+  # verification of anything zypper pulls in alongside the local rpm.
+  #
+  # The rpm IS signed (RSA/SHA256, fingerprint
+  # F85417992FA59E0A84F1E2CCF4A476D807DD4467) but Dell distributes the
+  # signing key only through their authenticated support portal, so it
+  # cannot be vendored here. zypper will warn about the unknown key and
+  # proceed for a local package file; repo-sourced packages keep their
+  # normal verification.
+  community.general.zypper:
+    name: /tmp/{{ cee_install_rpm_local | basename }}
+    state: present
+  become: true
+  notify: Restart emc_cee
+
+- name: Verify the installed layout
+  ansible.builtin.include_tasks: install_linux_verify.yml
