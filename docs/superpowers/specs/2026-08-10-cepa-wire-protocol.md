@@ -62,30 +62,50 @@ documente déjà : `PartnerId@http://adresse:port`, liste séparée par des
 points-virgules, et `Enabled = 1` requis sur Audit ou VCAPS selon le
 consommateur.
 
-**La réponse attendue, d'après la documentation publique** (Netwrix pour
-Dell Activity Monitor, fils Dell Community sur l'enregistrement CEPA) :
+**La réponse attendue : HTTP 200 avec un corps VIDE.**
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<RegisterResponse>
-  <Status>Success</Status>
-</RegisterResponse>
+C'est la seule affirmation de ce document qui vienne d'une implémentation
+en production plutôt que d'une observation ou d'une page web. Le paquet
+`pkg/server/server.go` de `cee-exporter`, qui reçoit ces requêtes pour de
+vrai, l'énonce en tête de fichier :
+
+```go
+//  1. RegisterRequest: respond HTTP 200 with an EMPTY body.  Any XML in the
+//     response causes a fatal parse error on the PowerStore side.
+//  2. Response latency: the CEPA heartbeat timeout is ~3 seconds.  The handler
+//     ACKs immediately and delegates work to the async queue.
+//  3. VCAPS batches: a single PUT may contain thousands of events.
 ```
+
+**La documentation publique est trompeuse sur ce point.** Netwrix et les
+fils Dell Community décrivent une réponse XML de la forme
+`<RegisterResponse><Status>Success</Status></RegisterResponse>`, et
+mentionnent des rejets « Incomplete XML » quand `Name` ou `FriendlyName`
+manque. Répondre cela à CEE 9.2.0.0 provoque une erreur de parsing fatale
+côté émetteur. Ces sources décrivent vraisemblablement une variante ou une
+version antérieure du protocole ; elles restent citées plus bas, mais ne
+doivent pas servir de référence d'implémentation.
+
+Deux contraintes supplémentaires en découlent, absentes de toute source
+publique : l'acquittement doit partir en **moins de trois secondes**, et
+un seul `PUT` peut porter des milliers d'événements en mode VCAPS.
+
+### Erreur commise pendant cette enquête, consignée pour mémoire
+
+Le premier consommateur factice répondait `HTTP 200` avec un corps vide —
+c'était **correct**. Il a ensuite été « corrigé » pour renvoyer la
+`RegisterResponse` XML de la documentation publique, ce qui l'a rendu
+**non conforme**. Les essais UTF-8 contre UTF-16 qui ont suivi
+comparaient donc deux réponses invalides, et leurs résultats — des hôtes
+qui se taisent, d'autres qui réémettent — n'ont aucune valeur
+probante. La documentation publique a été préférée au code qui implémente
+réellement le protocole, dans un dépôt voisin.
 
 ## Ce qui n'est pas établi
 
-**L'encodage de la réponse.** La documentation publique montre de
-l'UTF-8. CEE annonce `Accept-Charset: utf-16` et envoie lui-même de
-l'UTF-16LE. Les deux ont été essayés :
-
-- Réponse UTF-8 : l'hôte Windows a continué à réémettre toutes les 10 s.
-- Réponse UTF-16 : des hôtes se sont tus, d'autres non.
-
-**Ces observations sont contaminées.** Le consommateur factice a levé une
-exception sur certaines requêtes (`do_PUT`, connexion probablement
-rompue), donc on ne sait pas si CEE a reçu une réponse valide, une
-réponse tronquée, ou rien. Aucune conclusion sur UTF-8 contre UTF-16 ne
-doit être tirée de ces essais.
+**Ce qui suit un enregistrement réussi.** Aucun essai n'a été mené avec
+une réponse conforme et un consommateur stable. La séquence complète —
+enregistrement, puis flux d'événements — reste inobservée.
 
 **Ce qui suit l'enregistrement.** On ne sait pas si un enregistrement
 réussi ouvre une session, ni ce que CEE attend ensuite. Aucun événement
@@ -109,11 +129,16 @@ format n'est toujours pas connu : `RegisterRequest` est ce que CEE envoie
 
 ## Prochaine étape
 
-Reprendre la mesure avec un consommateur qui ne lève pas d'exception, et
-comparer proprement UTF-8 contre UTF-16 sur des redémarrages contrôlés,
-en croisant avec les journaux de CEE des deux côtés — journald sur Linux,
-journal d'événements Windows — pour distinguer un enregistrement réussi
-d'un abandon.
+Ne pas refaire de consommateur factice. `cee-exporter` implémente déjà le
+protocole correctement et se déploie nativement
+(`deploy/systemd/cee-exporter.service`). Le brancher en face de nos trois
+CEE apprend davantage, plus vite, et sans reconstituer par essais ce
+qu'un dépôt voisin sait déjà.
+
+Il manque pour cela une visibilité que l'exporter n'expose pas encore :
+aucune métrique ne dit qu'un publieur est toujours vivant, donc « zéro
+événement » y reste aussi ambigu qu'ici. Suivi en
+<https://github.com/fjacquet/cee-exporter/issues/27>.
 
 ## Limites
 
