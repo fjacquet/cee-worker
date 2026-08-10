@@ -38,6 +38,12 @@
     label: "{{ item.item }}"
 
 - name: Ensure the log directory exists and is writable by the service user
+  # Config-consistency only, not functional: CEE 9.2.0.0 never opens a
+  # file here (it logs to stdout, captured by the journal — see
+  # cee_verify), but cee_log_path stays a required variable for template
+  # rendering and this keeps the on-disk directory consistent with the
+  # rendered <LogFile><Path>. A future reader must not assume
+  # verification depends on this directory.
   ansible.builtin.file:
     path: "{{ cee_log_path }}"
     state: directory

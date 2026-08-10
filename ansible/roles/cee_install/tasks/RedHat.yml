@@ -37,8 +37,8 @@
   #     Installing:
   #      emc_cee   x86_64   9.2-0.0   @commandline   4.1 M
   #     Transaction Summary — Total size: 4.1 M
-  # One package, from @commandline. The blast radius of this flag is
-  # exactly this rpm, and nothing else.
+  # One package, from @commandline. On this 9.8 host's package set, the
+  # blast radius of this flag is exactly this rpm, and nothing else.
   #
   # What that costs: the trust anchor moves from Dell's signature to this
   # repo's own tracked artefact. The rpm IS signed (RSA/SHA256, key ID
@@ -47,7 +47,14 @@
   # keyservers (404) and from Dell's public pgp_pubkeys paths. Anyone
   # with portal access should fetch it, vendor it, `rpm --import` it on
   # the target, and drop this flag: that is strictly better than what
-  # this line does.
+  # this line does. And `disable_gpg_check` is transaction-wide in
+  # `ansible.builtin.dnf` — it covers repository-sourced packages as well
+  # as the local one, not just the local package. The @commandline-only
+  # measurement above is evidence about this host's package set, not a
+  # structural guarantee: if a minimal host ever does pull a
+  # UBI-sourced dependency to satisfy this rpm, that dependency installs
+  # unverified too. The flag protects nothing inside the transaction; it
+  # only reflects what was already unverified on the host outside it.
   #
   # The UBI repos are kept because a minimal RHEL host may lack what this
   # 9.8 image happens to have. They cost one metadata fetch and remove a

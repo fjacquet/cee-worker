@@ -34,7 +34,16 @@
   # boost, openssl, curl and jansson all ship inside /opt/CEEPack, and
   # glibc, libstdc++, libgcc_s, libm and libpthread were confirmed
   # present on a stock SLES 15 SP7 host. There is nothing else in the
-  # transaction whose verification this could weaken.
+  # transaction whose verification this could weaken — but, as with the
+  # RHEL branch, `disable_gpg_check` is transaction-wide in
+  # `community.general.zypper`, not scoped to the local package; this is
+  # still evidence about this host, not a structural guarantee. The SLES
+  # case is stronger than RHEL's, since boost/openssl/curl/jansson ship
+  # inside /opt/CEEPack itself rather than being resolved from a
+  # repository, and the remaining glibc-family dependencies were
+  # confirmed present on the stock host rather than merely assumed — but
+  # it is still a measurement of one host's package set, not a guarantee
+  # that holds on every SLES 15 host.
   #
   # Same remedy as RHEL if you have Dell portal access: fetch the public
   # key for F4A476D807DD4467, vendor it, `rpm --import` it on the target,
