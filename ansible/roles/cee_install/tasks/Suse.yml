@@ -19,19 +19,30 @@
   ansible.builtin.include_tasks: install_linux_locate.yml
 
 - name: Install CEE
-  # Deliberately no disable_gpg_check, for the same reason the RHEL branch
-  # avoids it: the option is transaction-wide, so it would also suppress
-  # verification of anything zypper pulls in alongside the local rpm.
+  # disable_gpg_check is set, for the same measured reason as the RHEL
+  # branch — and the claim this comment used to make was flatly wrong.
   #
-  # The rpm IS signed (RSA/SHA256, fingerprint
-  # F85417992FA59E0A84F1E2CCF4A476D807DD4467) but Dell distributes the
-  # signing key only through their authenticated support portal, so it
-  # cannot be vendored here. zypper will warn about the unknown key and
-  # proceed for a local package file; repo-sourced packages keep their
-  # normal verification.
+  # It said "zypper will warn about the unknown key and proceed for a
+  # local package file". It does not proceed. On SLES 15 SP7:
+  #     Header V4 RSA/SHA256 Signature, key ID 07dd4467: NOKEY
+  #     Signature verification failed [4-Signatures public key is not available]
+  #     Installation has been aborted as directed.
+  # zypper aborts where dnf was merely assumed to be permissive; neither
+  # actually installs this rpm without the flag.
+  #
+  # Blast radius is one package. SLES pulls no dependencies for this rpm:
+  # boost, openssl, curl and jansson all ship inside /opt/CEEPack, and
+  # glibc, libstdc++, libgcc_s, libm and libpthread were confirmed
+  # present on a stock SLES 15 SP7 host. There is nothing else in the
+  # transaction whose verification this could weaken.
+  #
+  # Same remedy as RHEL if you have Dell portal access: fetch the public
+  # key for F4A476D807DD4467, vendor it, `rpm --import` it on the target,
+  # and drop this flag.
   community.general.zypper:
     name: /tmp/{{ cee_install_rpm_local | basename }}
     state: present
+    disable_gpg_check: true
   become: true
   notify: Restart emc_cee
 

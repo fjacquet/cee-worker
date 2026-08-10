@@ -19,34 +19,45 @@
   ansible.builtin.include_tasks: install_linux_locate.yml
 
 - name: Install CEE
-  # Deliberately no disable_gpg_check here. That option maps to dnf
-  # --nogpgcheck, which is transaction-wide: it would also suppress
-  # signature verification for every UBI-sourced dependency this rpm pulls
-  # in, nullifying `gpgcheck = 1` in files/ubi.repo exactly when it
-  # matters. Leaving it unset restores dnf's normal behaviour —
-  # repo-sourced packages are checked against the Red Hat key that
-  # ubi.repo already points at
-  # (/etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release), while this local
-  # vendored rpm is governed by dnf's `localpkg_gpgcheck` setting, which
-  # defaults to off, so it installs unverified.
+  # disable_gpg_check is set, and the reasoning that previously argued
+  # against it was wrong on both of its factual claims. Both were
+  # corrected against a real RHEL 9.8 host; neither had ever been
+  # executed before.
   #
-  # The CEE rpm IS signed (RSA/SHA256, fingerprint
-  # F85417992FA59E0A84F1E2CCF4A476D807DD4467), but Dell distributes that
-  # signing key only through their authenticated support portal — it is
-  # not on public keyservers or in Dell's public pgp_pubkeys repo, so it
-  # cannot be vendored into this repo. If that key is obtained through
-  # the support portal in the future, `localpkg_gpgcheck: true` (plus
-  # importing the key on the target) would close this remaining gap.
+  # It claimed dnf's `localpkg_gpgcheck` "defaults to off, so it installs
+  # unverified". It does not. Without this flag, RHEL 9.8 fails with:
+  #     Failed to validate GPG signature for emc_cee-9.2-0.0.x86_64:
+  #     Public key for emc_cee_RHEL-9.2.0.0.x86_64.rpm is not installed
+  # The install never worked on a real host.
   #
-  # enablerepo turns on the two UBI repos for this transaction only. They
-  # are defined on the host with `enabled = 0`, so the depsolver sees the
-  # same package set it would have seen with `enabled = 1` — dnf loads a
-  # disabled repo's metadata as soon as --enablerepo names it — while
-  # nothing outside this transaction has its package sources rewritten.
-  # Requires outbound HTTPS to cdn-ubi.redhat.com from the target host.
+  # It also claimed --nogpgcheck is dangerous here because it would
+  # suppress verification for "every UBI-sourced dependency this rpm
+  # pulls in". It pulls in none. Measured with `dnf install --assumeno`
+  # on RHEL 9.8 with both UBI repos enabled:
+  #     Installing:
+  #      emc_cee   x86_64   9.2-0.0   @commandline   4.1 M
+  #     Transaction Summary — Total size: 4.1 M
+  # One package, from @commandline. The blast radius of this flag is
+  # exactly this rpm, and nothing else.
+  #
+  # What that costs: the trust anchor moves from Dell's signature to this
+  # repo's own tracked artefact. The rpm IS signed (RSA/SHA256, key ID
+  # F4A476D807DD4467) but Dell ships that key only through their
+  # authenticated support portal — confirmed absent from public
+  # keyservers (404) and from Dell's public pgp_pubkeys paths. Anyone
+  # with portal access should fetch it, vendor it, `rpm --import` it on
+  # the target, and drop this flag: that is strictly better than what
+  # this line does.
+  #
+  # The UBI repos are kept because a minimal RHEL host may lack what this
+  # 9.8 image happens to have. They cost one metadata fetch and remove a
+  # class of failure; enablerepo turns them on for this transaction only,
+  # so nothing outside it has its package sources rewritten. Requires
+  # outbound HTTPS to cdn-ubi.redhat.com from the target host.
   ansible.builtin.dnf:
     name: /tmp/{{ cee_install_rpm_local | basename }}
     state: present
+    disable_gpg_check: true
     enablerepo:
       - ubi-9-baseos-rpms
       - ubi-9-appstream-rpms
