@@ -1532,7 +1532,43 @@ run against real hardware. Nothing has, on any of the three."
 
 Cette tâche ne produit pas de code. Elle produit les quatre valeurs sans lesquelles la branche Windows ne peut pas être écrite honnêtement.
 
-**Bloquée sur** : un Windows Server de test joint au domaine, OpenSSH activé. Machine éteinte au moment de la rédaction du plan.
+**Débloquée.** La VM est disponible. Deux hypothèses de la rédaction initiale se révèlent fausses, et les étapes ci-dessous en tiennent compte.
+
+### État réel de `winvm`, relevé en lecture seule avant toute modification
+
+| | |
+|---|---|
+| Accès | alias SSH `winvm` défini dans le `~/.ssh/config` de l'opérateur — adresse, compte et clé n'ont pas leur place dans un fichier suivi |
+| `DefaultShell` | `pwsh` → `ansible_shell_type: powershell` |
+| OS | Microsoft Windows Server 2025 Datacenter, 10.0.26100, `ProductType = Server` |
+| Domaine | **`WORKGROUP`, `PartOfDomain = False`** |
+| CEE | **9.3.0.0 déjà installé**, ProductCode `{149370D4-461B-43D1-9D8E-71FCBA58A618}` |
+| Registre | `HKLM:\SOFTWARE\EMC` présent |
+
+Connectivité Ansible vérifiée : `ansible.windows.win_ping` renvoie `pong`.
+
+**Première correction — la machine n'est pas jointe au domaine.** Le spec et l'en-tête de ce plan décrivent une cible « jointe à un domaine ». Le relevé se fait donc sur une machine standalone et **ne peut rien prouver de ce qui dépend du domaine** : compte de service de domaine, contraintes CAVA, délégation. Pour CEPA — le seul chemin que ce dépôt implémente — le service tourne en LocalSystem et le relevé reste valable. Cette limite doit être écrite noir sur blanc dans le document de relevé.
+
+**Seconde correction — la machine n'est pas vierge.** Le ProductCode lisible aujourd'hui est celui de 9.3.0.0, pas celui de l'artefact 9.2.0.0 vendoré dans `bin/`. Le consigner tel quel produirait un `win_package` qui croit CEE installé alors qu'une autre version l'est, ou l'inverse : précisément le mode de défaillance silencieux que ce dépôt combat.
+
+**Séquence retenue** (arbitrage utilisateur) : lire le registre 9.3.0.0 comme référence, désinstaller 9.3.0.0, installer `bin/EMC_CEE_Pack_x64_9_2_0_0.exe` — ce qui valide au passage les drapeaux silencieux —, relever les quatre inconnues sur 9.2.0.0, et consigner le diff 9.2 contre 9.3.
+
+**Note d'outillage** : `ansible.windows` est installée sur le nœud de contrôle mais **reste absente de `ansible/requirements.yml`** tant qu'aucun module `win_*` n'existe dans l'arbre. Elle y entrera avec le premier `Windows.yml`, en phase 2.
+
+### Étapes révisées
+
+Elles remplacent la rédaction initiale ci-dessous, qui supposait une machine vierge. L'ordre est contraint : l'étape 0 est la seule occasion de capturer l'état 9.3.0.0.
+
+0. Relever `HKLM:\SOFTWARE\EMC` en entier sur 9.3.0.0, plus le nom du service et le chemin de log, **avant** toute désinstallation.
+1. Désinstaller 9.3.0.0 via son `UninstallString` en mode silencieux ; vérifier que la clé de registre et le service ont disparu.
+2. Installer `bin/EMC_CEE_Pack_x64_9_2_0_0.exe` en silencieux — c'est ici que la variante InstallShield (`/s /v"/qn"` contre `/s /f1"…iss"`) se détermine pour de bon.
+3. Relever le ProductCode de 9.2.0.0 dans la clé Uninstall.
+4. Relever l'arborescence de registre CEPA complète de 9.2.0.0.
+5. Relever le nom du service Windows et le chemin de log par défaut.
+6. Confirmer l'absence de la chaîne `Platform is not supported` dans le log.
+7. Consigner le tout, **plus le diff 9.2 contre 9.3**, dans le document de relevé.
+
+**Bloquée sur** : rien. Prête à exécuter.
 
 **Files:**
 - Create: `docs/superpowers/specs/2026-08-10-cee-windows-releve.md`
