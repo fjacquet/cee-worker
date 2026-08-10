@@ -109,7 +109,14 @@ bundled dashboards are mounted from there, not copied).
 
     cp .env.test.example .env
     # edit .env: GHCR_OWNER, PSTORE1_HOSTNAME/USERNAME/PASSWORD
+    mkdir -p logs/cee-exporter && sudo chown 65532:65532 logs/cee-exporter
     docker compose -f docker-compose.test.yml up -d
+
+The `chown` is required because the cee-exporter image runs as uid 65532,
+and its evtx writer opens the file at startup — so a directory owned by
+anyone else makes the container exit 1 with `writer_init_failed` and
+crash-loop. Fix the ownership; do not add `user: "0:0"` to the service,
+which would undo deliberate upstream hardening.
 
 Services: `cee` (12228), `cee-exporter` (9228 metrics, 12229 CEPA — maps
 to container 12228), `pstore_exporter` (9446), `prometheus` (9090),

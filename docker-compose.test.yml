@@ -42,6 +42,15 @@ services:
       - "12229:12228"
     volumes:
       - ./cee-exporter-config.toml:/etc/cee-exporter/config.toml:ro
+      # The image runs as uid 65532, and go-evtx opens the evtx file eagerly
+      # at startup — so this directory must exist and be owned by 65532
+      # before the stack comes up, or the container exits 1 with
+      # writer_init_failed. It is committed (logs/cee-exporter/.gitkeep) so a
+      # fresh checkout does not let Docker create it root-owned; you still
+      # need the one-time chown:
+      #   sudo chown 65532:65532 logs/cee-exporter
+      # Do not "fix" a permission error by adding user: "0:0" here — running
+      # non-root is deliberate hardening upstream.
       - ./logs/cee-exporter:/var/log/cee-exporter
     restart: unless-stopped
 

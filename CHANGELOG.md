@@ -49,9 +49,43 @@ Dell CEE build and the useful version to know is CEE's own.
   from a false pass
 - Outbound HTTPS to `cdn-ubi.redhat.com` documented as a prerequisite; the
   dependency resolution has always needed it and it appeared nowhere
+- AT-12 now reads the whole `cee_*` metric set rather than
+  `cee_events_received_total` alone: `cee_events_written_total`,
+  `cee_events_dropped_total`, `cee_writer_errors_total`, `cee_queue_depth`
+  and `cee_build_info{version=…}`. Received counts events arriving, not
+  events landing, and the two came apart for five months here — the old
+  pin's evtx writer was a stub that wrote no file while `received` climbed
+  normally, which is exactly the false pass the pair now catches.
+  `cee_build_info` pins which build is answering, the check that would have
+  surfaced the stale pin itself
 
 ### Fixed
 
+- `logs/cee-exporter/` is now committed (via `.gitkeep`, with the matching
+  `.gitignore` negation that keeps `audit.evtx` ignored) and every place
+  that starts the test stack documents
+  `sudo chown 65532:65532 logs/cee-exporter`. cee-exporter 5.1.0 runs as
+  uid 65532 where the old pin ran as root, and go-evtx opens the evtx file
+  eagerly at startup — so on a fresh checkout Docker created the bind-mount
+  source root-owned, the writer got EACCES, and the container exited 1 and
+  crash-looped. AT-11, AT-12 and runbook Stages 2–3 all failed at hop zero.
+  Documented as an ownership fix rather than `user: "0:0"`, so nobody
+  reverses upstream's non-root hardening to make the error go away
+- AT-11 and the runbook's Stage 3 told the operator to look for
+  `CreateFile` and `DeleteFile` records. Neither string exists anywhere in
+  cee-exporter: real CEPA sends `CEPP_CREATE_FILE` / `CEPP_DELETE_FILE`,
+  the mapper converts those to numeric Windows EventIDs, and the non-
+  Windows evtx writer omits the CEPA type entirely — so the grep found
+  nothing no matter how healthy the pipeline was. Both documents now give
+  two checks that work: EventID 4663 (create) and 4660 (delete) matched
+  together with `ObjectName`, and, as the cheaper first check, a grep of
+  cee-exporter's debug log for `cepa_event_detail`. Stage 2's synthetic
+  probe used the same non-existent `CreateFile` event type and now sends
+  `CEPP_CREATE_FILE`, so it exercises a real mapping
+- AT-11 and the runbook now state that go-evtx opens the evtx with
+  `O_TRUNC`, so a restart destroys every prior record. An empty file after
+  one is expected, not proof that events stopped — the false negative laid
+  for exactly the operator who restarts the container to fix a problem
 - `<EndPoint>` now renders as `name@http://host:port`. The consumer-name
   prefix is mandatory per the Dell CEE guide and the Peer Software
   PowerStore guide; the previous bare URL was silently ignored by CEE

@@ -398,13 +398,38 @@ useless for diagnosis on its own.
 **Do** the runbook's Stage 3: create and delete a file on a monitored
 filesystem.
 
-**Expect** matching `CreateFile` and `DeleteFile` events reach
-cee-exporter within a few seconds.
+**Expect** two checks, cheapest first.
+
+Grep cee-exporter's own log for the parsed event —
+`cee-exporter-config.toml` already sets `logging.level = "debug"`, so this
+needs no configuration change:
+
+    docker compose -f docker-compose.test.yml logs cee-exporter \
+      | grep cepa_event_detail | grep <your-test-filename>
+
+Expected: one line with `event_type=CEPP_CREATE_FILE` and one with
+`event_type=CEPP_DELETE_FILE`.
+
+Then the output file. Do **not** grep `audit.evtx` for `CreateFile` or
+`DeleteFile` — cee-exporter maps CEPA event types to numeric Windows
+EventIDs and never writes the CEPA type into the record, so those strings
+find nothing, ever. Match EventID **4663 for the create and 4660 for the
+delete**, each together with an `ObjectName` equal to your test filename.
 
 **False pass** an event that arrives may have arrived for a reason you did
 not intend. Use a filename that could not come from anywhere else and grep
 for that exact string; a counter that moved during a busy hour on a shared
 array proves the path is *carrying traffic*, not that it carried *yours*.
+The EventID on its own is the same trap in a new place: 4663 is also the
+exporter's default for every event type it does not recognise, so a 4663
+with the wrong `ObjectName` — or with none checked — is not your event.
+The log line proving the event parsed is likewise not proof it was
+written; that is what AT-12's `cee_events_written_total` is for.
+A restart truncates `audit.evtx` — the writer opens it with `O_TRUNC` — so
+an empty or short file after one is expected behaviour, not evidence that
+events stopped arriving. This is the trap laid for exactly the operator
+who restarts the container to fix something; redo the client action after
+the restart before reading anything into an empty file.
 If it fails, do not debug from here — go back to the flowchart above and
 work out which hop, then run that hop's test.
 
@@ -416,18 +441,37 @@ work out which hop, then run that hop's test.
 
 **Do**:
 
-    curl -s http://<docker-host>:9228/metrics | grep '^cee_events_received_total'
+    curl -s http://<docker-host>:9228/metrics | grep '^cee_'
     curl -sG http://<prometheus>:9090/api/v1/query \
       --data-urlencode 'query=cee_events_received_total'
     curl -sG http://<prometheus>:9090/api/v1/query \
       --data-urlencode 'query=up{job="cee-exporter"}'
 
-**Expect** the counter is exposed, Prometheus returns it, and `up` is 1.
+**Expect** the counters are exposed, Prometheus returns them, and `up` is
+1. Read the whole `cee_*` set, not just the first one — each answers a
+different question:
+
+| Metric | What a wrong value means |
+|---|---|
+| `cee_events_received_total` | events arriving over HTTP; flat means nothing is reaching the exporter |
+| `cee_events_written_total` | events landing in the evtx; flat while `received` climbs means the writer is broken |
+| `cee_events_dropped_total` | queue overflow; any growth means events were discarded, not delayed |
+| `cee_writer_errors_total` | write failures; non-zero explains a stalled `written` |
+| `cee_queue_depth` | backlog; steadily rising means consumers cannot keep up |
+| `cee_build_info{version=…}` | which build is actually running — check it matches the pin in `docker-compose.test.yml` |
 
 **False pass** Prometheus happily serves the last successful scrape long
 after the target has died. A non-zero counter is not evidence the exporter
 is alive right now — check `up` and the sample's timestamp, not just the
-value.
+value. The sharper one here is reading `cee_events_received_total` alone
+and calling the pipeline healthy: received counts events arriving, not
+events landing, and the two came apart for five months on this repo — the
+pinned build's evtx writer was a stub that wrote no file at all while
+`received` climbed exactly as it should. `received` without a matching
+`written`, or with `dropped`/`writer_errors` moving, is that failure. And
+`cee_build_info` is the check that would have caught the stale pin
+itself: a version you did not expect means every other number on this page
+describes a build you are not reasoning about.
 
 ---
 

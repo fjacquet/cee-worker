@@ -92,8 +92,23 @@ Expected: `active`, a listener on 12228, and a log with no
 
 ### Stage 2 — the consumer is reachable and parsing
 
-Run this **from the CEE host**, not from your workstation. The point is to
-prove that the exact path CEE will use — that host, that address, that
+Before the stack is started for the first time, the exporter's output
+directory must exist and be owned by uid 65532 — the image runs as that
+non-root user, and its evtx writer opens the file eagerly at startup, so a
+root-owned directory (which is what Docker creates for a bind mount whose
+source is missing) makes the container exit 1 with `writer_init_failed`
+and crash-loop. On the Docker host, in the repo root:
+
+    mkdir -p logs/cee-exporter && sudo chown 65532:65532 logs/cee-exporter
+
+Fix the ownership rather than adding `user: "0:0"` to the service —
+running non-root is deliberate hardening upstream, not an accident. If
+Stage 2 fails at every check at once, confirm the container is actually up
+(`docker compose -f docker-compose.test.yml ps`) before debugging the
+network.
+
+Run the rest **from the CEE host**, not from your workstation. The point is
+to prove that the exact path CEE will use — that host, that address, that
 port — reaches a working consumer.
 
 Record cee-exporter's current event count:
@@ -107,7 +122,7 @@ body; `POST` is rejected:
       -H 'Content-Type: text/xml' \
       --data-binary '<?xml version="1.0" encoding="utf-8"?>
     <CEEEvent>
-      <EventType>CreateFile</EventType>
+      <EventType>CEPP_CREATE_FILE</EventType>
       <Timestamp>2026-08-08T12:00:00Z</Timestamp>
       <FilePath>/runbook/stage2-probe.txt</FilePath>
       <Username>runbook</Username>
@@ -149,12 +164,46 @@ Common Stage 2 failures:
 On a client with the monitored filesystem mounted, create and delete a
 file:
 
-    touch /mnt/<share>/cee-runbook-test.txt
-    rm /mnt/<share>/cee-runbook-test.txt
+    touch /mnt/<share>/cee-runbook-$(date +%s).txt
+    rm /mnt/<share>/cee-runbook-*.txt
 
-Expected: corresponding `CreateFile` and `DeleteFile` events appear in
-cee-exporter's output (`/var/log/cee-exporter/audit.evtx` in the test
-stack) within a few seconds.
+Use a filename that could not have come from anywhere else, and note it —
+both checks below match on it.
+
+Check the cheap one first. cee-exporter logs every parsed event before
+enqueuing it, and `cee-exporter-config.toml` already sets
+`logging.level = "debug"`, so this works out of the box:
+
+    docker compose -f docker-compose.test.yml logs cee-exporter \
+      | grep cepa_event_detail | grep cee-runbook-
+
+Expected: one line with `event_type=CEPP_CREATE_FILE` and one with
+`event_type=CEPP_DELETE_FILE`, each carrying your filename in `file_path`.
+This proves CEE forwarded and cee-exporter parsed — but not that anything
+was written.
+
+Then check the output file (`/var/log/cee-exporter/audit.evtx` in the test
+stack). Do **not** grep it for `CreateFile` or `DeleteFile`: those strings
+never appear. cee-exporter converts CEPA event types to numeric Windows
+EventIDs and does not write the CEPA type into the record at all. Match on
+the EventID together with `ObjectName`:
+
+| Client action | CEPA event type | EventID in the evtx |
+|---|---|---|
+| create | `CEPP_CREATE_FILE` | 4663 |
+| delete | `CEPP_DELETE_FILE` | 4660 |
+
+Expected: an EventID 4663 record and an EventID 4660 record, both with
+`ObjectName` equal to your test filename, within a few seconds. EventID
+alone is not enough — 4663 is also the exporter's default for any event
+type it does not recognise, so a 4663 without your `ObjectName` tells you
+nothing.
+
+Restarting cee-exporter truncates `audit.evtx` — the writer opens it with
+`O_TRUNC`, so every prior record is destroyed. An empty or short file
+right after a restart is expected behaviour, not evidence that events
+stopped arriving. Re-run the client action after the restart before
+concluding anything from an empty file.
 
 If Stage 2 passed and Stage 3 did not, the fault is in CEE's own
 configuration or on the inbound leg — PowerStore to CEE. Stage 2 rules out
