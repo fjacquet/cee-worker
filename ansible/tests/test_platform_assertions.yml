@@ -10,7 +10,7 @@
     - name: Expect the platform gate to fail
       block:
         - name: Assert platform
-          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform.yml
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_RedHat.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "Validation did not reject the Rocky distribution."
@@ -32,7 +32,7 @@
     - name: Expect the platform gate to fail
       block:
         - name: Assert platform
-          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform.yml
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_RedHat.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "Validation did not reject major version 8."
@@ -52,4 +52,4 @@
     ansible_distribution_major_version: "9"
   tasks:
     - name: Assert platform
-      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform.yml
+      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_RedHat.yml

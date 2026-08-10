@@ -1,7 +1,17 @@
 ---
-- name: Restart emc_cee
+# Two handler tasks, one notified name. Tasks in cee_install and
+# cee_configure notify "Restart emc_cee" and stay unchanged; `listen`
+# routes that notification to whichever implementation matches the host.
+#
+# A single systemd_service handler would fail on a Windows target, which
+# has no systemd — and it would fail inside a handler, after the play has
+# already changed the host's configuration.
+
+- name: Restart emc_cee on Linux
+  listen: Restart emc_cee
   ansible.builtin.systemd_service:
     name: emc_cee
     state: restarted
     daemon_reload: true
   become: true
+  when: ansible_os_family != 'Windows'

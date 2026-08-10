@@ -1,58 +1,15 @@
 ---
+# Platform dispatch. cee_common has already run every variable, endpoint
+# and sub-facility gate, so by the time we get here the configuration is
+# known good and the only open question is what kind of host this is.
+
 - name: Gather facts needed for the platform gate
   ansible.builtin.setup:
     gather_subset:
       - distribution
 
-- name: Assert the platform is supported
-  ansible.builtin.include_tasks: assert_platform.yml
+- name: Assert the OS family is supported
+  ansible.builtin.include_tasks: assert_os_family.yml
 
-- name: Check whether chrony is present
-  ansible.builtin.stat:
-    path: /usr/bin/chronyc
-  register: cee_preflight_chronyc
-
-- name: Time must be synchronised
-  when: cee_preflight_chronyc.stat.exists
-  block:
-    - name: Query chrony tracking state
-      ansible.builtin.command: chronyc tracking
-      register: cee_preflight_chrony_tracking
-      changed_when: false
-      failed_when: false
-
-    - name: Clock must not be unsynchronised
-      ansible.builtin.assert:
-        that:
-          - cee_preflight_chrony_tracking.rc == 0
-          - "'Not synchronised' not in cee_preflight_chrony_tracking.stdout"
-        fail_msg: >-
-          Clock is not synchronised. The PowerStore array, this CEE host and
-          the consumer must agree on time or events are rejected or
-          misordered. Fix chrony before continuing.
-
-- name: Warn when chrony is absent
-  ansible.builtin.debug:
-    msg: >-
-      chronyc not found — time synchronisation could not be verified.
-      PowerStore, CEE and the consumer must share synchronised time.
-  when: not cee_preflight_chronyc.stat.exists
-
-- name: Check whether the CEE port is already in use
-  ansible.builtin.wait_for:
-    port: "{{ cee_http_port }}"
-    host: 127.0.0.1
-    state: stopped
-    timeout: 3
-  register: cee_preflight_port_free
-  # Use ignore_errors rather than failed_when: false to preserve the module's real
-  # failure status so the downstream 'is failed' check can detect port conflicts
-  ignore_errors: true
-
-- name: Report a pre-existing listener on the CEE port
-  ansible.builtin.debug:
-    msg: >-
-      Something is already listening on {{ cee_http_port }}. If this is a
-      previous emc_cee instance the playbook will reconfigure it; if it is
-      another service, CEE will fail to bind.
-  when: cee_preflight_port_free is failed
+- name: Run the platform-specific preflight
+  ansible.builtin.include_tasks: "{{ ansible_os_family }}.yml"

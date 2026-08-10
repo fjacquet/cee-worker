@@ -1,0 +1,36 @@
+---
+# The OS-family gate. Without it, an unsupported family reaches
+# include_tasks and fails with a bare "Could not find or access
+# 'Debian.yml'" — an error that names a missing file instead of an
+# unsupported operating system.
+
+- name: An unsupported OS family is rejected by name
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_os_family: Debian
+  tasks:
+    - name: Expect the OS-family gate to fail
+      block:
+        - name: Assert the OS family
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_os_family.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "The OS-family gate did not reject Debian."
+      rescue:
+        - name: Confirm it failed for the OS-family reason
+          ansible.builtin.assert:
+            that:
+              - "'supports RHEL 9 and SLES 15' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the unsupported-OS-family message."
+
+- name: The RedHat family is accepted
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_os_family: RedHat
+  tasks:
+    - name: Assert the OS family
+      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_os_family.yml
