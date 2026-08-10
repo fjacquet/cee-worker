@@ -104,12 +104,9 @@ réellement le protocole, dans un dépôt voisin.
 ## Ce qui n'est pas établi
 
 **Ce qui suit un enregistrement réussi.** Aucun essai n'a été mené avec
-une réponse conforme et un consommateur stable. La séquence complète —
-enregistrement, puis flux d'événements — reste inobservée.
-
-**Ce qui suit l'enregistrement.** On ne sait pas si un enregistrement
-réussi ouvre une session, ni ce que CEE attend ensuite. Aucun événement
-n'a jamais circulé.
+une réponse conforme et un consommateur stable. On ne sait donc pas si
+l'enregistrement ouvre une session, ni ce que CEE attend ensuite. Aucun
+événement n'a jamais circulé.
 
 **La sémantique du silence.** Un hôte qui cesse d'émettre peut avoir
 réussi son enregistrement, ou avoir abandonné. Les deux sont
