@@ -1,0 +1,23 @@
+---
+# Platform gate. Isolated from main.yml so it can be tested with
+# overridden facts on a workstation.
+
+- name: Host must be genuine Red Hat Enterprise Linux
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == 'RedHat'
+    fail_msg: >-
+      Detected '{{ ansible_distribution }}'. CEE reads /etc/redhat-release
+      and self-terminates with "Platform is not supported / qualified"
+      unless it sees the literal Red Hat string. RHEL-compatible rebuilds
+      such as Rocky and AlmaLinux fail this check despite being ABI
+      compatible.
+
+- name: Host must be RHEL major version 9
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution_major_version == '9'
+    fail_msg: >-
+      Detected RHEL {{ ansible_distribution_major_version }}. CEE 9.2
+      requires RHEL 9.x per the Peer Software PowerStore configuration
+      guide.

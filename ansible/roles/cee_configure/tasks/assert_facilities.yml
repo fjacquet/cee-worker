@@ -1,0 +1,43 @@
+---
+# Sub-facility gate. Isolated from main.yml so tests/ can include it
+# directly with deliberately wrong facility combinations.
+#
+# Both assertions are kept in one file on purpose: they are two halves of
+# a single policy over a single variable — exactly one sub-facility, and
+# that one must be Audit. Neither is sufficient alone (the count check
+# accepts vcaps-only; the Audit check accepts audit-plus-others), and the
+# second's failure message only reads correctly given the first. Splitting
+# them would separate a count from the identity check that completes it.
+#
+# Neither uses `loop:`. A failure inside a looped assert is wrapped by
+# Ansible as {"msg": "One or more items failed", "results": [...]} and the
+# real fail_msg is only visible nested under results[n].msg, where the
+# tests' rescue blocks — which read ansible_failed_result.msg — cannot
+# see it. Same reason validate_endpoints.yml uses selectattr over the
+# whole list rather than looping.
+
+- name: Exactly one sub-facility may be enabled
+  ansible.builtin.assert:
+    that:
+      - (cee_facilities.values() | select('equalto', true) | list | length) == 1
+    fail_msg: >-
+      {{ cee_facilities.values() | select('equalto', true) | list | length }}
+      sub-facilities are enabled. Enable exactly one. Audit is the
+      synchronous real-time path cee-exporter speaks; VCAPS is async bulk
+      delivery and needs exporter-side work first.
+
+- name: The one enabled sub-facility must be Audit
+  # The assert above only counts. It is satisfied by, say, vcaps: true /
+  # audit: false — but emc_cee_config.xml.j2 gates the rendered <EndPoint>
+  # on cee_facilities.audit specifically, so that combination is a silent
+  # dead end, not a config error.
+  ansible.builtin.assert:
+    that:
+      - cee_facilities.audit | bool
+    fail_msg: >-
+      cee_facilities.audit is false. The config template renders
+      <EndPoint> only for Audit, so enabling a different sub-facility
+      instead produces <Enabled>1</Enabled> with an empty
+      <EndPoint></EndPoint>: CEE starts, binds its port, writes a log and
+      passes every cee_verify check while forwarding nothing, forever.
+      Set audit: true, and leave the other sub-facilities false.

@@ -8,8 +8,16 @@
 # Requires ../pstore_exporter checked out as a sibling directory (for
 # Grafana's bundled PowerStore dashboards).
 #
-# cee-exporter has no ":latest" tag upstream (its CI only pushes sha-* tags);
-# override with CEE_EXPORTER_TAG=sha-xxxxxxx if the pinned default goes stale.
+# cee-exporter is pinned to a semver tag. Upstream now publishes both
+# ":latest" and bare semver ("5.1.0", no v prefix) — the older note here
+# claiming sha-* tags only was out of date. Override with
+# CEE_EXPORTER_TAG=<tag> to test another build.
+#
+# Do not pin below 5.1.0 while [output] type = "evtx". Every .evtx written
+# by a non-Windows build before 5.1.0 is unreadable by Windows —
+# Get-WinEvent reports "The event log file is corrupted" — and the files
+# cannot be repaired afterwards. That bug shipped in every release since
+# v2 and went unnoticed because nothing upstream ever read one back.
 
 services:
   cee:
@@ -23,17 +31,26 @@ services:
     restart: unless-stopped
 
   cee-exporter:
-    image: ghcr.io/${GHCR_OWNER:-fjacquet}/cee-exporter:${CEE_EXPORTER_TAG:-sha-5571a41}
+    image: ghcr.io/${GHCR_OWNER:-fjacquet}/cee-exporter:${CEE_EXPORTER_TAG:-5.1.0}
     container_name: test_cee_exporter
-    # 12228 not published to host: this stack's own `cee` service already
-    # claims host port 12228 for external CEPA sources, so publishing it
-    # here too would collide. cee reaches cee-exporter over the compose
-    # network at http://cee-exporter:12228 instead (see
-    # config/emc_cee_config.xml's Audit EndPoint).
+    # 12229:12228 rather than 12228:12228. CEE's inbound listener owns
+    # 12228 by specification, and with CEE now on a VM its consumer must
+    # be reachable off-host. Publishing the exporter on 12229 lets the CEE
+    # host and the Docker host be the same machine without colliding.
     ports:
       - "9228:9228"
+      - "12229:12228"
     volumes:
       - ./cee-exporter-config.toml:/etc/cee-exporter/config.toml:ro
+      # The image runs as uid 65532, and go-evtx opens the evtx file eagerly
+      # at startup — so this directory must exist and be owned by 65532
+      # before the stack comes up, or the container exits 1 with
+      # writer_init_failed. It is committed (logs/cee-exporter/.gitkeep) so a
+      # fresh checkout does not let Docker create it root-owned; you still
+      # need the one-time chown:
+      #   sudo chown 65532:65532 logs/cee-exporter
+      # Do not "fix" a permission error by adding user: "0:0" here — running
+      # non-root is deliberate hardening upstream.
       - ./logs/cee-exporter:/var/log/cee-exporter
     restart: unless-stopped
 

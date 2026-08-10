@@ -1,21 +1,33 @@
+{#
+  CEE 9.2.0.0 configuration.
+
+  Rendered from group_vars — do not edit on the target host; the next
+  playbook run overwrites it.
+
+  EndPoint format is `name@http://host:port`, semicolon-separated for
+  multiple consumers. The prefix is mandatory (Dell CEE guide line 284).
+  Ordering matters: CEE monitors the first endpoint in the list to decide
+  whether to publish at all, so if the first consumer is down, none of the
+  others receive events either.
+#}
 <?xml version="1.0" encoding="utf-8"?>
 <CEEConfig version="9.2.0.0">
   <CEPP>
     <Audit>
       <Configuration>
-        <Enabled>1</Enabled>
-        <EndPoint>ceeexporter@http://cee-exporter:12228</EndPoint>
+        <Enabled>{{ 1 if cee_facilities.audit else 0 }}</Enabled>
+        <EndPoint>{% if cee_facilities.audit %}{% for e in cee_endpoints %}{{ e.name }}@http://{{ e.host }}:{{ e.port }}{% if not loop.last %};{% endif %}{% endfor %}{% endif %}</EndPoint>
       </Configuration>
     </Audit>
     <CQM>
       <Configuration>
-        <Enabled>0</Enabled>
+        <Enabled>{{ 1 if cee_facilities.cqm else 0 }}</Enabled>
         <EndPoint></EndPoint>
       </Configuration>
     </CQM>
     <Backup>
       <Configuration>
-        <Enabled>0</Enabled>
+        <Enabled>{{ 1 if cee_facilities.backup else 0 }}</Enabled>
         <EndPoint></EndPoint>
         <FeedInterval>60</FeedInterval>
         <MaxEventsPerFeed>100</MaxEventsPerFeed>
@@ -23,7 +35,7 @@
     </Backup>
     <CARA>
       <Configuration>
-        <Enabled>0</Enabled>
+        <Enabled>{{ 1 if cee_facilities.cara else 0 }}</Enabled>
         <EndPoint></EndPoint>
         <FeedInterval>60</FeedInterval>
         <MaxEventsPerFeed>100</MaxEventsPerFeed>
@@ -31,7 +43,7 @@
     </CARA>
     <Index>
       <Configuration>
-        <Enabled>0</Enabled>
+        <Enabled>{{ 1 if cee_facilities.index else 0 }}</Enabled>
         <EndPoint></EndPoint>
         <FeedInterval>60</FeedInterval>
         <MaxEventsPerFeed>100</MaxEventsPerFeed>
@@ -43,7 +55,7 @@
     </Index>
     <VCAPS>
       <Configuration>
-        <Enabled>0</Enabled>
+        <Enabled>{{ 1 if cee_facilities.vcaps else 0 }}</Enabled>
         <EndPoint></EndPoint>
         <FeedInterval>60</FeedInterval>
         <MaxEventsPerFeed>100</MaxEventsPerFeed>
@@ -51,27 +63,27 @@
     </VCAPS>
   </CEPP>
   <Configuration>
-    <CacheSize>100</CacheSize>
-    <Debug>0</Debug>
+    <CacheSize>{{ cee_cache_size }}</CacheSize>
+    <Debug>{{ cee_debug }}</Debug>
     <HeartBeatIntervalSecs>10</HeartBeatIntervalSecs>
     <InstrIntervalSecs>10</InstrIntervalSecs>
-    <NumberOfThreads>20</NumberOfThreads>
-    <Verbose>0</Verbose>
-    <HttpPort>12228</HttpPort>
-    <HttpsPort>12443</HttpsPort>
+    <NumberOfThreads>{{ cee_threads }}</NumberOfThreads>
+    <Verbose>{{ cee_verbose }}</Verbose>
+    <HttpPort>{{ cee_http_port }}</HttpPort>
+    <HttpsPort>{{ cee_https_port }}</HttpsPort>
     <WatchDog>
       <RestartCount>2</RestartCount>
       <RestartDelay>5</RestartDelay>
       <ResetRestartCountAfter>86400</ResetRestartCountAfter>
     </WatchDog>
     <LogFile>
-      <Path>/opt/CEEPack/logs/</Path>
+      <Path>{{ cee_log_path }}</Path>
       <MaxSize>100</MaxSize>
     </LogFile>
     <Security>
       <Access>
-        <AccessListEnabled>0</AccessListEnabled>
-        <AccessList></AccessList>
+        <AccessListEnabled>{{ cee_access_list_enabled }}</AccessListEnabled>
+        <AccessList>{{ cee_access_list | join(',') }}</AccessList>
       </Access>
       <Http>
         <ServerEnabled>1</ServerEnabled>

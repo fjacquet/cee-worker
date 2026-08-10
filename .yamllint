@@ -1,0 +1,13 @@
+---
+# Ansible YAML uses long lines and `on:`/`yes` truthiness that the default
+# yamllint profile flags. Relax only those.
+extends: default
+
+rules:
+  line-length:
+    max: 160
+    level: warning
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+  comments-indentation: disable

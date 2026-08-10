@@ -1,0 +1,9 @@
+---
+- name: Deploy Dell CEE to a RHEL 9 host
+  hosts: cee
+  gather_facts: true
+  roles:
+    - cee_preflight
+    - cee_install
+    - cee_configure
+    - cee_verify

@@ -1,0 +1,62 @@
+---
+# Copy to all.yml and edit. all.yml is gitignored — it holds site addresses.
+
+# CEE inbound listener. PowerStore posts CEPA events here. 12228 is the
+# documented default and the PowerStore side expects it (Dell CEE guide,
+# line 709). Changing it means changing the PowerStore publishing pool too.
+# Both must be a TCP port between 1 and 65535, written as a plain integer.
+# cee_preflight refuses anything else up front: an out-of-range value would
+# otherwise reach firewalld and the config template unchallenged and only
+# surface later as "nothing is listening on 12228", which names the wrong
+# problem.
+cee_http_port: 12228
+cee_https_port: 12443
+
+# Where CEE forwards events. `name` becomes the mandatory `name@` prefix.
+# `host` must be a routable IP or FQDN — never 127.0.0.1, never a Docker
+# Compose service name (CEE runs on a VM and cannot resolve compose DNS).
+#
+# `port` must be a plain integer between 1 and 65535. The template renders
+# it verbatim, so a quoted or fractional value emits a URL CEE drops
+# without logging anything; cee_configure rejects both before that.
+#
+# ORDER MATTERS: CEE monitors the first endpoint to decide whether to
+# publish at all. If the first one is down, no endpoint receives events.
+cee_endpoints:
+  - name: ceeexporter
+    host: 10.10.10.10     # the Docker host running cee-exporter
+    port: 12229           # host-published port, maps to container 12228
+
+# Open cee_http_port in firewalld on the CEE host. RHEL 9 ships firewalld
+# enabled with only ssh allowed, and cee_verify probes 127.0.0.1 — a path
+# firewalld does not filter — so a firewalled host passes every check while
+# dropping every event PowerStore sends. Leave this true unless a firewall
+# is managed elsewhere (a network appliance, or nftables under some other
+# tool); in that case set it false and open the port yourself. Requires the
+# ansible.posix collection: see ansible/requirements.yml.
+cee_manage_firewall: true
+
+# Restrict which sources may post events. 1 is the vendor default and the
+# right posture on a real network. Set to 0 only to isolate a bring-up
+# problem, then set it back.
+cee_access_list_enabled: 1
+cee_access_list:
+  - 10.20.30.40           # PowerStore NAS server address
+
+# Exactly one sub-facility should be true. Audit is the synchronous
+# real-time path cee-exporter speaks. VCAPS is async bulk delivery and
+# needs exporter-side work before it can be enabled.
+cee_facilities:
+  audit: true
+  cqm: false
+  backup: false
+  cara: false
+  index: false
+  vcaps: false
+
+# Logging and tuning. cee_log_path must end with a trailing slash.
+cee_log_path: /opt/CEEPack/logs/
+cee_cache_size: 100
+cee_threads: 20
+cee_debug: 0
+cee_verbose: 0

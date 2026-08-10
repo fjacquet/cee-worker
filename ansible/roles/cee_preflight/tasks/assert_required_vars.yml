@@ -1,0 +1,67 @@
+---
+# Required-variable gate. Isolated from main.yml so tests/ can include it
+# directly with a deliberately incomplete variable set.
+#
+# These roles ship no defaults/main.yml on purpose: an explicit refusal
+# beats a default that quietly renders a wrong config. This runs first, so
+# a missing group_vars/all.yml is named here rather than swallowed by the
+# ignore_errors on the port probe and re-surfacing several tasks later as
+# a raw Jinja undefined against the wrong task.
+
+- name: Every required variable must be defined
+  ansible.builtin.assert:
+    that:
+      - cee_http_port is defined
+      - cee_https_port is defined
+      - cee_endpoints is defined
+      - cee_access_list_enabled is defined
+      - cee_access_list is defined
+      - cee_facilities is defined
+      - cee_manage_firewall is defined
+      - cee_log_path is defined
+      - cee_cache_size is defined
+      - cee_threads is defined
+      - cee_debug is defined
+      - cee_verbose is defined
+    fail_msg: >-
+      One or more required variables are undefined. These roles ship no
+      defaults on purpose. Copy ansible/group_vars/all.yml.example to
+      ansible/group_vars/all.yml and fill it in; every variable named in
+      this assertion is documented there. Required:
+      cee_http_port, cee_https_port, cee_endpoints,
+      cee_access_list_enabled, cee_access_list, cee_facilities,
+      cee_manage_firewall, cee_log_path, cee_cache_size, cee_threads,
+      cee_debug, cee_verbose.
+
+# Defined is not enough. An out-of-range listener port reaches firewalld
+# and the config template unchallenged, and the first sign of trouble is
+# cee_verify reporting that nothing is listening on 12228 — which names
+# the wrong problem entirely. Two tasks rather than one so the failure
+# names the variable at fault.
+
+# The digits-only test is deliberate, and `is integer` is deliberately NOT
+# used: `-e cee_http_port=12228` arrives as a string and would fail it.
+# Matching on `| string` accepts both 12228 and "12228" while still
+# rejecting 12228.5 — which `| int` alone would silently truncate to 12228
+# and wave through, only for firewalld to be handed "12228.5/tcp" later.
+- name: Variable cee_http_port must be a valid TCP port
+  ansible.builtin.assert:
+    that:
+      - cee_http_port | string is match('^[0-9]+$')
+      - cee_http_port | int > 0
+      - cee_http_port | int < 65536
+    fail_msg: >-
+      cee_http_port is {{ cee_http_port }}, which is not a TCP port. It
+      must be a whole number between 1 and 65535. This is CEE's inbound
+      listener, the port PowerStore publishes to.
+
+- name: Variable cee_https_port must be a valid TCP port
+  ansible.builtin.assert:
+    that:
+      - cee_https_port | string is match('^[0-9]+$')
+      - cee_https_port | int > 0
+      - cee_https_port | int < 65536
+    fail_msg: >-
+      cee_https_port is {{ cee_https_port }}, which is not a TCP port. It
+      must be a whole number between 1 and 65535. CEE writes it into the
+      config even though the HTTPS listener ships disabled.

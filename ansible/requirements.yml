@@ -1,0 +1,11 @@
+---
+# Collections this playbook needs beyond ansible-core.
+#
+#     ansible-galaxy collection install -r ansible/requirements.yml
+#
+# ansible.posix supplies ansible.posix.firewalld, used by cee_configure to
+# open the CEE inbound port. It is NOT bundled with ansible-core, so a
+# clean checkout fails --syntax-check and ansible-lint without this.
+collections:
+  - name: ansible.posix
+    version: ">=1.5.4"

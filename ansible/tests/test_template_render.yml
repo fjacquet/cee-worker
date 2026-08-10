@@ -1,0 +1,148 @@
+---
+# Renders the CEE config template with known variables and asserts the
+# result. Runs entirely on localhost: no VM, no CEE install, no network.
+- name: Render emc_cee_config.xml and assert its contents
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_http_port: 12228
+    cee_https_port: 12443
+    cee_cache_size: 100
+    cee_threads: 20
+    cee_debug: 0
+    cee_verbose: 0
+    cee_log_path: /opt/CEEPack/logs/
+    cee_access_list_enabled: 1
+    cee_access_list:
+      - 10.20.30.40
+      - 10.20.30.41
+    cee_endpoints:
+      - name: ceeexporter
+        host: 10.10.10.10
+        port: 12229
+    cee_facilities:
+      audit: true
+      cqm: false
+      backup: false
+      cara: false
+      index: false
+      vcaps: false
+  tasks:
+    - name: Render the template
+      ansible.builtin.template:
+        src: ../roles/cee_configure/templates/emc_cee_config.xml.j2
+        dest: /tmp/cee_render_test.xml
+        mode: "0644"
+
+    - name: Slurp the rendered file
+      ansible.builtin.slurp:
+        src: /tmp/cee_render_test.xml
+      register: rendered
+
+    - name: Decode to a plain string
+      ansible.builtin.set_fact:
+        cee_xml: "{{ rendered.content | b64decode }}"
+
+    - name: EndPoint carries the mandatory consumer-name prefix
+      ansible.builtin.assert:
+        that:
+          - "'<EndPoint>ceeexporter@http://10.10.10.10:12229</EndPoint>' in cee_xml"
+        fail_msg: >-
+          EndPoint must render as name@http://host:port. The Dell CEE guide
+          (line 284) and the Peer Software PowerStore guide both require the
+          consumer-name prefix; CEE ignores a bare URL.
+
+    - name: Audit is the only enabled sub-facility
+      ansible.builtin.assert:
+        that:
+          - cee_xml is search('<Audit>\\s*<Configuration>\\s*<Enabled>1</Enabled>')
+          - cee_xml is search('<CQM>\\s*<Configuration>\\s*<Enabled>0</Enabled>')
+          - cee_xml is search('<Backup>\\s*<Configuration>\\s*<Enabled>0</Enabled>')
+          - cee_xml is search('<CARA>\\s*<Configuration>\\s*<Enabled>0</Enabled>')
+          - cee_xml is search('<Index>\\s*<Configuration>\\s*<Enabled>0</Enabled>')
+          - cee_xml is search('<VCAPS>\\s*<Configuration>\\s*<Enabled>0</Enabled>')
+        fail_msg: "Exactly one sub-facility (Audit) must be enabled."
+
+    - name: HTTP server is enabled and bound to the configured port
+      ansible.builtin.assert:
+        that:
+          - "'<HttpPort>12228</HttpPort>' in cee_xml"
+          - cee_xml is search('<Http>\\s*<ServerEnabled>1</ServerEnabled>')
+        fail_msg: >-
+          CEE 9.x ships Http/ServerEnabled=0. Without 1 here CEE never binds
+          a listener and fails silently.
+
+    - name: Access list is enabled and populated
+      ansible.builtin.assert:
+        that:
+          - "'<AccessListEnabled>1</AccessListEnabled>' in cee_xml"
+          - "'10.20.30.40' in cee_xml"
+          - "'10.20.30.41' in cee_xml"
+        fail_msg: "AccessList must contain every configured PowerStore address."
+
+    - name: Schema version matches the shipped rpm
+      ansible.builtin.assert:
+        that:
+          - '''<CEEConfig version="9.2.0.0">'' in cee_xml'
+        fail_msg: "Config version attribute must match CEE 9.2.0.0."
+
+    - name: Log path is set (the vendor default config omits LogFile entirely)
+      ansible.builtin.assert:
+        that:
+          - "'<Path>/opt/CEEPack/logs/</Path>' in cee_xml"
+        fail_msg: "LogFile/Path must be set so cee_verify can find the log."
+
+- name: Multiple endpoints render semicolon-separated in declared order
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_http_port: 12228
+    cee_https_port: 12443
+    cee_cache_size: 100
+    cee_threads: 20
+    cee_debug: 0
+    cee_verbose: 0
+    cee_log_path: /opt/CEEPack/logs/
+    cee_access_list_enabled: 0
+    cee_access_list: []
+    cee_endpoints:
+      - name: primary
+        host: 10.10.10.10
+        port: 12229
+      - name: secondary
+        host: 10.10.10.11
+        port: 12229
+    cee_facilities:
+      audit: true
+      cqm: false
+      backup: false
+      cara: false
+      index: false
+      vcaps: false
+  tasks:
+    - name: Render the template
+      ansible.builtin.template:
+        src: ../roles/cee_configure/templates/emc_cee_config.xml.j2
+        dest: /tmp/cee_render_multi.xml
+        mode: "0644"
+
+    - name: Slurp the rendered file
+      ansible.builtin.slurp:
+        src: /tmp/cee_render_multi.xml
+      register: rendered_multi
+
+    - name: Decode to a plain string
+      ansible.builtin.set_fact:
+        cee_xml_multi: "{{ rendered_multi.content | b64decode }}"
+
+    - name: Endpoints join with ';' preserving order
+      ansible.builtin.assert:
+        that:
+          - >-
+            '<EndPoint>primary@http://10.10.10.10:12229;secondary@http://10.10.10.11:12229</EndPoint>'
+            in cee_xml_multi
+        fail_msg: >-
+          Order is load-bearing: CEE gates delivery to every endpoint on the
+          availability of the first one in the list.

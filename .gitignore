@@ -1,7 +1,21 @@
 logs/*
 !logs/.gitkeep
 
+# logs/cee-exporter must exist in a fresh checkout: the cee-exporter image
+# runs as uid 65532, and a directory Docker auto-creates for the bind mount
+# is root-owned 0755, so the writer's open() fails with EACCES and the
+# container exits 1. Re-including the directory needs both lines below —
+# git does not descend into a directory excluded by "logs/*", so the
+# negation on the .gitkeep alone would never be reached.
+!logs/cee-exporter/
+logs/cee-exporter/*
+!logs/cee-exporter/.gitkeep
+
 # test stack: pstcli creds/certs, local env overrides
 state/*
 !state/.gitkeep
 .env
+
+# ansible: real inventory and vars hold site addresses
+ansible/inventory/hosts.yml
+ansible/group_vars/all.yml

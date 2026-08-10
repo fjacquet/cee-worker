@@ -1,0 +1,26 @@
+# UBI 9 repositories. Reachable without a Red Hat subscription, which
+# matters because the CEE target host is unentitled. The CEE rpm installs
+# cleanly on stock UBI9 (see the project Dockerfile), so this package set
+# is known to satisfy it.
+#
+# enabled = 0 is deliberate. This file is dropped on the host permanently,
+# but the repos are switched on for one transaction only, via `enablerepo`
+# on the dnf task in tasks/main.yml. Leaving them enabled would rewrite the
+# host's package sources for every future dnf run — and on an entitled host
+# it would layer these CDN repos over the subscription ones, so unrelated
+# packages could start resolving from UBI instead of from RHEL. `enablerepo`
+# gets the identical depsolve result without that side effect: gpgcheck and
+# gpgkey below are repo attributes and stay in force regardless of `enabled`.
+[ubi-9-baseos-rpms]
+name = Red Hat Universal Base Image 9 - BaseOS
+baseurl = https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os
+enabled = 0
+gpgcheck = 1
+gpgkey = file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+
+[ubi-9-appstream-rpms]
+name = Red Hat Universal Base Image 9 - AppStream
+baseurl = https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/appstream/os
+enabled = 0
+gpgcheck = 1
+gpgkey = file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release

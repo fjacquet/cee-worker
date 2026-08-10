@@ -1,0 +1,55 @@
+---
+- name: A RHEL rebuild is rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_distribution: Rocky
+    ansible_distribution_major_version: "9"
+  tasks:
+    - name: Expect the platform gate to fail
+      block:
+        - name: Assert platform
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation did not reject the Rocky distribution."
+      rescue:
+        - name: Confirm it failed for the distribution reason
+          ansible.builtin.assert:
+            that:
+              - "'/etc/redhat-release' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the genuine-Red-Hat message."
+
+- name: RHEL 8 is rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_distribution: RedHat
+    ansible_distribution_major_version: "8"
+  tasks:
+    - name: Expect the platform gate to fail
+      block:
+        - name: Assert platform
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation did not reject major version 8."
+      rescue:
+        - name: Confirm it failed for the version reason
+          ansible.builtin.assert:
+            that:
+              - "'requires RHEL 9.x' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the major-version message."
+
+- name: Genuine RHEL 9 passes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_distribution: RedHat
+    ansible_distribution_major_version: "9"
+  tasks:
+    - name: Assert platform
+      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform.yml

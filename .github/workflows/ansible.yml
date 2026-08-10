@@ -1,0 +1,57 @@
+---
+name: Ansible
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch: {}
+
+# Read-only, and declared at workflow level rather than per job so a job
+# added later inherits it instead of silently getting the repository
+# default. This workflow only lints and runs localhost playbooks; it never
+# writes to the repo or to a registry.
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible and linters
+        run: pip install "ansible-core>=2.17" ansible-lint yamllint
+
+      # Must precede the syntax check and ansible-lint: ansible.posix is not
+      # bundled with ansible-core, and cee_configure calls
+      # ansible.posix.firewalld. Without this both steps fail on a clean
+      # checkout with "couldn't resolve module/action".
+      - name: Install collection dependencies
+        run: ansible-galaxy collection install -r ansible/requirements.yml
+
+      - name: yamllint
+        run: yamllint ansible/ .github/
+
+      - name: Seed inventory and vars from the committed examples
+        run: |
+          cp ansible/inventory/hosts.yml.example ansible/inventory/hosts.yml
+          cp ansible/group_vars/all.yml.example ansible/group_vars/all.yml
+
+      - name: Syntax check
+        working-directory: ansible
+        run: ansible-playbook --syntax-check site.yml
+
+      - name: ansible-lint
+        run: ansible-lint ansible/
+
+      - name: Run the localhost test suite
+        run: ansible/tests/run.sh

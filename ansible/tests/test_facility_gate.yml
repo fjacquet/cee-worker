@@ -1,0 +1,122 @@
+---
+# Negative tests for cee_configure's sub-facility gate.
+#
+# The first play is the one that matters: `vcaps: true, audit: false` used
+# to satisfy every check on the deployment path, render <Enabled>1</Enabled>
+# with an empty <EndPoint></EndPoint>, start cleanly, pass cee_verify, and
+# forward nothing forever.
+#
+# Each canary `fail` message shares no substring with what its rescue
+# asserts on, so deleting an assertion cannot let the canary satisfy the
+# test. Verified by mutation: with each assertion disabled in turn, the
+# corresponding play fails.
+
+- name: A single enabled sub-facility that is not Audit is rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_facilities:
+      audit: false
+      cqm: false
+      backup: false
+      cara: false
+      index: false
+      vcaps: true
+  tasks:
+    - name: The count check alone accepts this, which is why the Audit check exists
+      ansible.builtin.assert:
+        that:
+          - (cee_facilities.values() | select('equalto', true) | list | length) == 1
+        fail_msg: >-
+          This play is meant to exercise the Audit check with exactly one
+          sub-facility enabled. Fix the fixture, not the role.
+
+    - name: Expect the gate to fail
+      block:
+        - name: Assert facilities
+          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/assert_facilities.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "A selection CEE would never publish from was allowed through."
+      rescue:
+        - name: Confirm it failed for the empty-endpoint reason
+          ansible.builtin.assert:
+            that:
+              - "'<EndPoint></EndPoint>' in (ansible_failed_result.msg | default('') | string)"
+              - (ansible_failed_result.assertion | default('') | string) == 'cee_facilities.audit | bool'
+            fail_msg: >-
+              The gate failed, but not on cee_facilities.audit with the
+              message describing the empty rendered endpoint.
+
+- name: Two enabled sub-facilities are rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_facilities:
+      audit: true
+      cqm: false
+      backup: false
+      cara: false
+      index: false
+      vcaps: true
+  tasks:
+    - name: Expect the gate to fail
+      block:
+        - name: Assert facilities
+          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/assert_facilities.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Two feeds were switched on and the role raised no objection."
+      rescue:
+        - name: Confirm it failed for the count reason
+          ansible.builtin.assert:
+            that:
+              - "'Enable exactly one' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: >-
+              The gate failed, but not with the count message.
+
+- name: No enabled sub-facility is rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_facilities:
+      audit: false
+      cqm: false
+      backup: false
+      cara: false
+      index: false
+      vcaps: false
+  tasks:
+    - name: Expect the gate to fail
+      block:
+        - name: Assert facilities
+          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/assert_facilities.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Every feed was switched off and the role raised no objection."
+      rescue:
+        - name: Confirm it failed for the count reason
+          ansible.builtin.assert:
+            that:
+              - "'Enable exactly one' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: >-
+              The gate failed, but not with the count message.
+
+- name: Audit alone passes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_facilities:
+      audit: true
+      cqm: false
+      backup: false
+      cara: false
+      index: false
+      vcaps: false
+  tasks:
+    - name: Assert facilities
+      ansible.builtin.include_tasks: ../roles/cee_configure/tasks/assert_facilities.yml
