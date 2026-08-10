@@ -8,8 +8,16 @@
 # Requires ../pstore_exporter checked out as a sibling directory (for
 # Grafana's bundled PowerStore dashboards).
 #
-# cee-exporter has no ":latest" tag upstream (its CI only pushes sha-* tags);
-# override with CEE_EXPORTER_TAG=sha-xxxxxxx if the pinned default goes stale.
+# cee-exporter is pinned to a semver tag. Upstream now publishes both
+# ":latest" and bare semver ("5.1.0", no v prefix) — the older note here
+# claiming sha-* tags only was out of date. Override with
+# CEE_EXPORTER_TAG=<tag> to test another build.
+#
+# Do not pin below 5.1.0 while [output] type = "evtx". Every .evtx written
+# by a non-Windows build before 5.1.0 is unreadable by Windows —
+# Get-WinEvent reports "The event log file is corrupted" — and the files
+# cannot be repaired afterwards. That bug shipped in every release since
+# v2 and went unnoticed because nothing upstream ever read one back.
 
 services:
   cee:
@@ -23,7 +31,7 @@ services:
     restart: unless-stopped
 
   cee-exporter:
-    image: ghcr.io/${GHCR_OWNER:-fjacquet}/cee-exporter:${CEE_EXPORTER_TAG:-sha-5571a41}
+    image: ghcr.io/${GHCR_OWNER:-fjacquet}/cee-exporter:${CEE_EXPORTER_TAG:-5.1.0}
     container_name: test_cee_exporter
     # 12229:12228 rather than 12228:12228. CEE's inbound listener owns
     # 12228 by specification, and with CEE now on a VM its consumer must

@@ -69,6 +69,13 @@ Dell CEE build and the useful version to know is CEE's own.
   12.0.0, so `ansible-playbook site.yml` aborted before its first task on
   a control node with a current `ansible` package. Replaced with
   ansible-core's own `callback_result_format = yaml`
+- The test stack pinned `cee-exporter` at `sha-5571a41`, built 2026-03-03.
+  Every `.evtx` written by a non-Windows build before cee-exporter 5.1.0
+  is unreadable by Windows — `Get-WinEvent` reports "The event log file is
+  corrupted" — and the files cannot be repaired afterwards. The stack used
+  `[output] type = "evtx"`, so it was producing exactly those files.
+  Pinned to `5.1.0`, and the header comment claiming upstream publishes
+  sha-\* tags only was corrected: it publishes `latest` and bare semver
 - README described the container base as Rocky Linux 9; it has been UBI9
   since `4cd8007`, because CEE rejects RHEL rebuilds
 - Endpoint validation accepted a fractional port. Jinja's `int` filter
