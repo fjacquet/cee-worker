@@ -257,6 +257,45 @@ repo only vendors and deploys 9.2.0.0, so Phase 2 should assume
 the Linux XML template already does — but should not assume that holds
 if a future upgrade moves past 9.2.0.0.
 
+## Which service actually serves CEPA (added after the first harvest)
+
+The harvest above recorded two services but not which one carries the
+CEPA HTTP listener. That was left unknown, and guessing it would have
+produced a role that starts a service, reports `Running`, and leaves
+12228 dead.
+
+Measured directly: `Audit\Enabled` set to `1`, an `EndPoint` written,
+`Security\Http\ServerEnabled` set to `1`, both services restarted.
+
+```
+--- who listens on 12228 ---
+::  pid=2824  proc=CAVA
+
+  Id ProcessName Path
+2824 CAVA        C:\Program Files\EMC\CEE\CAVA.exe
+ 620 CEEMtrSvc   C:\Program Files\EMC\CEE\CEEMtrSvc.exe
+```
+
+**`CAVA.exe` owns the listener — service name `EMC Checker Server`,
+display name `EMC CAVA`.** `CEEMtrSvc.exe` (`EMC CEE Monitor`) does not.
+
+The naming is a trap: the service with "CEE" in its name is the monitor,
+and the one named after the antivirus agent hosts the whole CEE
+framework including the CEPA HTTP server. Phase 2 must manage
+`EMC Checker Server`. Restarting `EMC CEE Monitor` alone will not pick up
+a configuration change.
+
+Two further observations from the same run:
+
+- The registry configuration chain works end to end. Writing `Audit
+  Enabled=1` and `Http ServerEnabled=1` and restarting is sufficient to
+  bring the listener up — no file-based config is involved at any point.
+- The listener binds `::` (the IPv6 wildcard), where Linux binds
+  `*:12228`. A verification probe must not assume an IPv4-only bind.
+
+Still not proven by this: that CEE actually publishes to the endpoint.
+No PowerStore array has ever been in the loop.
+
 ## Limitations
 
 - **This VM is WORKGROUP, not domain-joined** (`PartOfDomain = False`).
