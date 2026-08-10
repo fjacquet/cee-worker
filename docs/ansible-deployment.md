@@ -19,6 +19,16 @@ already known.
   `/etc/redhat-release` / `/etc/SuSE-release` on SLES) and self-terminate
   with a byte-identical message, `Platform is not supported / qualified.
   CEE will now terminate.`, unless they see the right product string.
+- **Git LFS on the control node.** `bin/*.rpm` and `bin/*.exe` are
+  tracked with Git LFS (see `.gitattributes`). Run
+  `git lfs install && git lfs pull` right after cloning. Skip it and the
+  SLES rpm is a ~130-byte pointer file, not the real package —
+  `cee_install`'s SLES branch will find exactly one file (the pointer
+  passes the uniqueness check unaltered) and hand it to `zypper`, which
+  then fails confusingly on a file that isn't an rpm. The RHEL rpm
+  predates LFS in this repo's history and stays a plain blob, so **this
+  only bites the SLES path** — a RHEL-only clone can look fine while
+  silently missing the guard for SLES.
 - Time synchronised across the PowerStore array, the CEE host, and the
   consumer host
 - SMB configured on PowerStore; NFS optional
@@ -43,7 +53,13 @@ reachable UBI 9 repositories for RHEL dependency resolution.
 
 ## Setup
 
-Install the collection dependencies first. `cee_configure` uses
+Pull the LFS-tracked vendor artefacts first, if not already present
+(see Prerequisites above for what breaks without this):
+
+    git lfs install
+    git lfs pull
+
+Install the collection dependencies next. `cee_configure` uses
 `ansible.posix.firewalld` and `cee_install`'s SLES branch uses
 `community.general.zypper`; neither ships with ansible-core, so without
 this even `--syntax-check` fails:
