@@ -1,22 +1,33 @@
 ---
 # Copy to hosts.yml and edit. hosts.yml is gitignored.
 #
-# The CEE host must be genuine RHEL 9 — the playbook refuses to continue
-# otherwise, because CEE self-terminates on RHEL rebuilds.
+# Linux CEE hosts must be genuine RHEL 9 or SLES 15 — the playbook refuses
+# to continue otherwise, because CEE self-terminates on rebuilds such as
+# Rocky, AlmaLinux and openSUSE.
 all:
   children:
     cee:
-      hosts:
-        cee01.example.com:
-          ansible_host: 10.10.10.20
-          # An ordinary login, not root. Every task in every role that
-          # needs privilege declares `become: true`, so sudo supplies it;
-          # this account only needs passwordless sudo (or run the playbook
-          # with --ask-become-pass). Direct root SSH is not required and
-          # most hardened RHEL 9 builds disable it anyway.
-          ansible_user: ceeadmin
-          #
-          # ansible.cfg keeps host_key_checking on. Accept the host key
-          # once before the first unattended run, or ansible waits on a
-          # prompt nobody is there to answer:
-          #     ssh-keyscan -H 10.10.10.20 >> ~/.ssh/known_hosts
+      children:
+        # Two child groups whose only job is to carry per-OS variables:
+        # cee_log_path for both, plus the connection settings for Windows.
+        # site.yml still runs a single play over the cee group.
+        cee_linux:
+          hosts:
+            cee01.example.com:
+              ansible_host: 10.10.10.20
+              # An ordinary login, not root. Every task in every role that
+              # needs privilege declares `become: true`, so sudo supplies it;
+              # this account only needs passwordless sudo (or run the playbook
+              # with --ask-become-pass). Direct root SSH is not required and
+              # most hardened RHEL 9 builds disable it anyway.
+              ansible_user: ceeadmin
+              #
+              # ansible.cfg keeps host_key_checking on. Accept the host key
+              # once before the first unattended run, or ansible waits on a
+              # prompt nobody is there to answer:
+              #     ssh-keyscan -H 10.10.10.20 >> ~/.ssh/known_hosts
+
+        # PHASE 2 — the roles reject Windows by name until the Windows
+        # branch lands. Leave this group empty until then.
+        cee_windows:
+          hosts: {}

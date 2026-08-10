@@ -1,0 +1,25 @@
+---
+# Copy to cee_windows.yml. Applies to every host in the cee_windows group.
+#
+# PHASE 2: the roles do not yet implement the Windows branch. The
+# OS-family gate in cee_preflight rejects Windows by name until they do.
+# This file exists so the connection settings are documented and CI can
+# seed it alongside the others.
+
+# Ansible reaches Windows Server over OpenSSH here, not WinRM. The SSH
+# server's DefaultShell must be PowerShell for ansible_shell_type below to
+# match; if it is left as cmd, set ansible_shell_type: cmd instead.
+#
+# Note there is no credential delegation over this transport, unlike
+# WinRM with CredSSP. It does not matter for this deployment: the
+# installer is copied to the host before it runs, so nothing needs a
+# second hop to a network share.
+ansible_connection: ssh
+ansible_shell_type: powershell
+
+# Where CEE writes its log on Windows. Trailing separator required, same
+# as the Linux path.
+#
+# PHASE 2: confirm this against a real install before trusting it — the
+# default log location has not been verified on a Windows host.
+cee_log_path: 'C:\Program Files\EMC\CEE\logs\'

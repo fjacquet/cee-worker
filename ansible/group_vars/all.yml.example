@@ -54,8 +54,9 @@ cee_facilities:
   index: false
   vcaps: false
 
-# Logging and tuning. cee_log_path must end with a trailing slash.
-cee_log_path: /opt/CEEPack/logs/
+# Tuning. cee_log_path is NOT here: /opt/CEEPack/logs/ is meaningless on
+# Windows, so it lives in group_vars/cee_linux.yml and
+# group_vars/cee_windows.yml instead.
 cee_cache_size: 100
 cee_threads: 20
 cee_debug: 0

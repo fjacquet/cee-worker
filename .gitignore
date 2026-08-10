@@ -22,3 +22,5 @@ state/*
 # ansible: real inventory and vars hold site addresses
 ansible/inventory/hosts.yml
 ansible/group_vars/all.yml
+ansible/group_vars/cee_linux.yml
+ansible/group_vars/cee_windows.yml

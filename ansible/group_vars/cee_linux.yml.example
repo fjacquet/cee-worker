@@ -1,0 +1,10 @@
+---
+# Copy to cee_linux.yml. Applies to every host in the cee_linux group —
+# both RHEL 9 and SLES 15, which share an identical CEE layout.
+
+# Where CEE writes its log. Must end with a trailing slash: the config
+# template interpolates it verbatim.
+#
+# cee_verify treats an empty log directory as a failure, because that was
+# exactly the container's silent-failure signature.
+cee_log_path: /opt/CEEPack/logs/

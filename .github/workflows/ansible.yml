@@ -45,6 +45,8 @@ jobs:
         run: |
           cp ansible/inventory/hosts.yml.example ansible/inventory/hosts.yml
           cp ansible/group_vars/all.yml.example ansible/group_vars/all.yml
+          cp ansible/group_vars/cee_linux.yml.example ansible/group_vars/cee_linux.yml
+          cp ansible/group_vars/cee_windows.yml.example ansible/group_vars/cee_windows.yml
 
       - name: Syntax check
         working-directory: ansible
