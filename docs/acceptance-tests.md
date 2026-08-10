@@ -1,8 +1,29 @@
 # CEE Ansible Deployment — Acceptance Tests
 
 This is the test plan for the **first live deployment**. Every test below
-is a test *to be run*. None of them has been run. Nothing in this document
-records a result.
+is a test *to be run*. None of them has been run — on RHEL, on SLES, or
+on any other platform. Nothing in this document records a result.
+
+## Platform coverage
+
+This plan targets the two platforms the Ansible roles implement: RHEL 9
+and SLES 15. Nothing below is platform-specific by design — `cee_configure`
+and `cee_verify` are shared task files because the two rpms ship an
+identical payload, so the same checks and the same false-pass traps apply
+to both. Where a test *is* platform-specific (AT-4's `/etc/redhat-release`
+read, AT-5's UBI/dnf plumbing, AT-6's rpm path), that is called out in the
+test itself; treat AT-4/AT-5/AT-6 as needing a SLES-flavoured re-read
+(`/etc/os-release` or `/etc/SuSE-release`, `zypper` instead of `dnf`, the
+SLES rpm) rather than a literal re-run of the RHEL commands, and run the
+full sequence once per platform.
+
+Windows Server is **phase 2, not implemented** — `cee_preflight`'s
+OS-family gate rejects it outright — so no acceptance test here targets
+it, and none of this plan has run against a Windows host either.
+
+To be unambiguous about what that leaves standing: as of this document,
+this plan has been executed against real hardware on **zero** platforms.
+RHEL 9 and SLES 15 are both in scope for execution; neither has run.
 
 Work through `docs/ansible-deployment.md` and
 `docs/powerstore-setup-runbook.md` for the procedures themselves — this
@@ -15,7 +36,7 @@ Five things run today, all of them on a workstation or a CI runner:
 
 | Command | What it actually proves |
 |---|---|
-| `ansible/tests/run.sh` | Five localhost playbooks: the config template renders the expected XML from known variables; the endpoint validator rejects loopback, bare hostnames and an empty list; the platform gate rejects Rocky and RHEL 8; the required-variable gate rejects an incomplete `group_vars`; and the sub-facility gate rejects a non-Audit selection, two enabled facilities, and none. Every negative test has been mutation-tested — its guard disabled, the test watched to fail, the guard restored. No host is contacted. |
+| `ansible/tests/run.sh` | Six localhost playbooks: the config template renders the expected XML from known variables; the endpoint validator rejects loopback, bare hostnames and an empty list; the OS-family dispatch gate rejects an unsupported family (e.g. Debian) by name; the platform gates reject Rocky, RHEL 8 and openSUSE Leap by name; the required-variable gate rejects an incomplete `group_vars`; and the sub-facility gate rejects a non-Audit selection, two enabled facilities, and none. Every negative test has been mutation-tested — its guard disabled, the test watched to fail, the guard restored. No host is contacted. |
 | `cd ansible && ansible-playbook --syntax-check site.yml` | The playbook parses and every module named in it resolves. It does not execute a single task. |
 | `yamllint ansible/ .github/` | Formatting. |
 | `ansible-lint ansible/` | Rule compliance at the `production` profile. Idempotency claims in it are static heuristics, not observations. |
@@ -30,11 +51,12 @@ firewall drops, an SELinux denial, a wrong address in a publishing pool.
 
 Stated plainly, because the rest of this plan is calibrated against it:
 
-- **No rpm has ever been installed by this code.** `cee_install` has never
-  run against a RHEL host.
-- **No `emc_cee` service has ever been started by this code.** The
-  container path in this repo starts CEE a different way, through
-  `entrypoint.sh`, not through the systemd unit these roles manage.
+- **No rpm has ever been installed by this code, on either platform.**
+  `cee_install` has never run against a RHEL host or a SLES host.
+- **No `emc_cee` service has ever been started by this code, on either
+  platform.** The container path in this repo starts CEE a different way,
+  through `entrypoint.sh`, not through the systemd unit these roles
+  manage, and it is RHEL-only besides.
 - **No PowerStore array has ever been configured from
   `docs/powerstore-setup-runbook.md`.** The procedure is transcribed from
   vendor documentation, not from a completed run.

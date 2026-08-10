@@ -1,40 +1,51 @@
 # Deploying CEE with Ansible
 
 This is the supported path for a PowerStore-facing CEE instance. Dell
-supports CEE on a RHEL VM or bare metal; the container in this repo is a
-lab sandbox only.
+supports CEE on a RHEL or SLES VM or bare metal; the container in this
+repo is a lab sandbox only, RHEL-based, and not extended to SLES.
+
+Windows Server support is **phase 2 and not implemented**. The
+OS-family gate in `cee_preflight` accepts only `RedHat` and `Suse` and
+rejects Windows by name — see the Windows section below for what is
+already known.
 
 ## Prerequisites
 
 - PowerStoreOS 4.1 or later
-- A **genuine RHEL 9.x** host for CEE. RHEL-compatible rebuilds such as
-  Rocky and AlmaLinux do not work: CEE reads `/etc/redhat-release` and
-  self-terminates unless it sees the literal Red Hat string.
+- A **genuine RHEL 9.x or SLES 15 host** for CEE. RHEL-compatible
+  rebuilds such as Rocky and AlmaLinux do not work, and neither does
+  openSUSE: both CEE builds read the platform release files
+  (`/etc/redhat-release` on RHEL, `/etc/os-release` /
+  `/etc/redhat-release` / `/etc/SuSE-release` on SLES) and self-terminate
+  with a byte-identical message, `Platform is not supported / qualified.
+  CEE will now terminate.`, unless they see the right product string.
 - Time synchronised across the PowerStore array, the CEE host, and the
   consumer host
 - SMB configured on PowerStore; NFS optional
 - **TCP 12228 open inbound on the CEE host**, from the PowerStore NAS
-  server addresses. RHEL 9 ships firewalld enabled with only ssh allowed,
-  so this is closed by default. The playbook opens it (see
-  `cee_manage_firewall` below); if a firewall elsewhere on the path also
-  filters it, open it there too.
-- **Outbound HTTPS (TCP 443) from the CEE host to `cdn-ubi.redhat.com`.**
-  `cee_install` resolves the rpm's dependencies from the public UBI 9
-  content delivery network. Without this egress — an air-gapped host, or a
-  proxy-only network — the dnf transaction fails. On a proxied network, set
-  `proxy=` in `/etc/dnf/dnf.conf` on the target before running the
-  playbook.
+  server addresses. Both RHEL 9 and SLES 15 ship firewalld enabled with
+  only ssh allowed, so this is closed by default. The playbook opens it
+  (see `cee_manage_firewall` below); if a firewall elsewhere on the path
+  also filters it, open it there too.
+- **Outbound HTTPS (TCP 443) from the CEE host to `cdn-ubi.redhat.com` —
+  RHEL only.** `cee_install` resolves the RHEL rpm's dependencies from
+  the public UBI 9 content delivery network. Without this egress — an
+  air-gapped host, or a proxy-only network — the dnf transaction fails.
+  On a proxied network, set `proxy=` in `/etc/dnf/dnf.conf` on the target
+  before running the playbook. **SLES needs no equivalent egress**: see
+  the SLES section below.
 - Ansible on the control node (developed against core 2.21.2)
-- The `ansible.posix` collection (see Setup) — it is not part of
-  ansible-core
+- The `ansible.posix` and `community.general` collections (see Setup) —
+  neither is part of ansible-core
 
 A Red Hat subscription is *not* required. The playbook adds the publicly
-reachable UBI 9 repositories for dependency resolution.
+reachable UBI 9 repositories for RHEL dependency resolution.
 
 ## Setup
 
 Install the collection dependencies first. `cee_configure` uses
-`ansible.posix.firewalld`, which ansible-core does not ship, so without
+`ansible.posix.firewalld` and `cee_install`'s SLES branch uses
+`community.general.zypper`; neither ships with ansible-core, so without
 this even `--syntax-check` fails:
 
     ansible-galaxy collection install -r ansible/requirements.yml
@@ -43,8 +54,17 @@ Then seed the inventory and variables:
 
     cp ansible/inventory/hosts.yml.example ansible/inventory/hosts.yml
     cp ansible/group_vars/all.yml.example ansible/group_vars/all.yml
+    cp ansible/group_vars/cee_linux.yml.example ansible/group_vars/cee_linux.yml
+    cp ansible/group_vars/cee_windows.yml.example ansible/group_vars/cee_windows.yml
 
-Edit both. In `group_vars/all.yml` the values that matter most:
+Edit all four; `cee_windows.yml` only needs editing once the Windows
+branch lands, but the file must exist for `cee_preflight`'s
+required-variable gate. `cee_log_path` lives in the per-OS files
+(`cee_linux.yml` / `cee_windows.yml`), not in `all.yml` — put the host in
+the inventory's `cee_linux` or `cee_windows` child group and it picks up
+the matching file automatically.
+
+In `group_vars/all.yml` the values that matter most:
 
 - `cee_endpoints[].host` — the routable address of the host running
   cee-exporter. Never `127.0.0.1`, never a Docker Compose service name.
@@ -65,23 +85,72 @@ Every variable in the example file is required. The roles ship no
 `defaults/main.yml`; `cee_preflight` asserts the full list up front rather
 than letting a missing value render a quietly wrong config.
 
-Both files are gitignored; they hold site addresses. `hosts.yml.example`
-uses an ordinary login rather than `root` — every role declares
-`become: true`, so sudo supplies privilege.
+All four files are gitignored; they hold site addresses.
+`hosts.yml.example` uses an ordinary login rather than `root` — every
+role declares `become: true`, so sudo supplies privilege.
+
+## SLES 15
+
+SLES 15 is a fully supported target, sharing every role with RHEL except
+`cee_preflight`'s platform gate and `cee_install`'s package-install step.
+The only real difference: **SLES needs no repository setup at all.** The
+rpm's runtime dependencies — boost 1.88, openssl 3, libcurl 4 and
+jansson 4 — ship inside `/opt/CEEPack`; only glibc, `ld-linux` and a shell
+come from the base OS. `cee_install`'s SLES branch runs
+`community.general.zypper` directly against the local rpm file, with no
+`ubi.repo`-style dance and no outbound egress requirement beyond package
+manager metadata already on the host.
+
+Everything else — the config template, the firewalld port, the systemd
+unit, the verification checks — is identical to RHEL, because the two
+rpms ship an identical payload: same `/opt/CEEPack`, same
+`emc_cee_config.xml`, same `emc_cee.service` (`WorkingDirectory
+=/opt/CEEPack`, `User=ceesvc`).
+
+Put a SLES host in the inventory's `cee_linux` group exactly as for RHEL;
+`ansible_os_family` (`Suse`) does the rest of the routing.
+
+## Windows Server — phase 2, not implemented
+
+Windows is a planned target, not a supported one. `cee_preflight`'s
+OS-family gate accepts only `['RedHat', 'Suse']` and rejects `Windows` by
+name with a message pointing at the plan document. No `win_*` module
+exists anywhere in this tree, `ansible/requirements.yml` deliberately does
+not pull in `ansible.windows`, and the `cee_windows` inventory group is
+expected to stay empty until the branch lands.
+
+What is already known and documented, for when that branch starts:
+
+- **Connection**: Ansible reaches Windows Server over OpenSSH, not WinRM.
+  The SSH server's `DefaultShell` must be set to PowerShell to match
+  `ansible_shell_type: powershell` in `group_vars/cee_windows.yml.example`
+  — if it is left as `cmd`, that setting must change to match.
+- **No credential delegation** over this transport (unlike WinRM with
+  CredSSP). Not expected to matter here: the installer is copied to the
+  host before it runs, so nothing needs a second hop to a network share.
+- **Domain membership**: expect the target to be domain-joined, as is
+  typical for a Windows Server host reachable by SSH with a directory
+  account.
+- `cee_log_path` for Windows is provisionally `C:\Program Files\EMC\CEE\logs\`
+  in `group_vars/cee_windows.yml.example` — unverified against a real
+  install. Registry keys, the installer's silent-install flags, its
+  ProductCode, and the true default log path are unknown and out of scope
+  for this document; they are the subject of a later task.
 
 ## Run
 
     cd ansible
     ansible-playbook site.yml
 
-The playbook runs four roles in order:
+The playbook runs five roles in order:
 
 | Role | Asserts / does |
 |---|---|
-| `cee_preflight` | Every required variable is defined; host is genuine RHEL 9; clock is synchronised; reports anything already bound to 12228 |
-| `cee_install` | Drops the UBI 9 repo definitions (disabled), installs the rpm from `bin/` with those repos enabled for that transaction only, verifies `/opt/CEEPack` and the `emc_cee` unit exist |
-| `cee_configure` | Validates endpoints, asserts exactly one sub-facility *and* that it is Audit, renders the config, opens the inbound port in firewalld, enables the unit |
-| `cee_verify` | Unit active, port listening, log written, no unsupported-platform error |
+| `cee_common` | Every required variable is defined, endpoints are well formed, sub-facilities are sane — platform-neutral, pure Jinja, shared by RHEL and SLES alike. Runs first, before anything touches the host. |
+| `cee_preflight` | Host is genuine RHEL 9 or SLES 15 (`ansible_os_family` routes to `RedHat.yml`/`Suse.yml`, `ansible_distribution` judges — Rocky/Alma and openSUSE are rejected by name); clock is synchronised; reports anything already bound to 12228 |
+| `cee_install` | RHEL: drops the UBI 9 repo definitions (disabled), installs the rpm with those repos enabled for that transaction only. SLES: `zypper` installs the rpm directly, no repo setup needed. Both verify `/opt/CEEPack` and the `emc_cee` unit exist |
+| `cee_configure` | Validates endpoints, asserts exactly one sub-facility *and* that it is Audit, renders the config, opens the inbound port in firewalld, enables the unit — identical on RHEL and SLES |
+| `cee_verify` | Unit active, port listening, log written, no unsupported-platform error — identical on RHEL and SLES |
 
 Rerunning after a fix converges rather than stacking state. A config
 change restarts `emc_cee` via handler; an unchanged config does not.
@@ -93,9 +162,12 @@ converged run reports `changed=2`, not `changed=0`.
 
 ## Upgrading CEE
 
-Same as the container path: remove the old rpm from `bin/`, drop the new
-one in, rerun the playbook. The playbook refuses to continue if `bin/`
-holds anything other than exactly one rpm.
+Similar to the container path, per platform: remove the old RHEL rpm from
+`bin/` and drop the new one in for RHEL hosts, or the old SLES rpm for
+SLES hosts, then rerun the playbook. Each install role's glob requires
+exactly one matching file for its platform — `RedHat.yml` globs
+`emc_cee_RHEL-*.x86_64.rpm`, `Suse.yml` globs `emc_cee_SLES-*.x86_64.rpm`
+— so only the rpm for the platform being upgraded needs replacing.
 
 ## After deployment
 
@@ -104,9 +176,9 @@ Configure the PowerStore side and run the end-to-end event test:
 
 For the first deployment against real hardware, work through
 `docs/acceptance-tests.md` as well. Nothing on this branch has yet run
-against a live RHEL 9 host or a live array, and that document is the plan
-for establishing that it does — including how to tell a real pass from a
-false one.
+against a live RHEL 9 host, a live SLES 15 host, or a live array, and that
+document is the plan for establishing that it does — including how to
+tell a real pass from a false one.
 
 ## Troubleshooting
 
@@ -151,7 +223,13 @@ endpoint receives events, and its availability also governs whether
 events are re-sent later.
 
 **Preflight rejects the host.** The distribution message is not advisory.
-CEE will not run on a rebuild; use genuine RHEL 9.
+CEE will not run on a rebuild; use genuine RHEL 9 or genuine SLES 15.
+
+**`ansible_os_family` is unsupported.** A message naming
+`ansible_os_family` and listing `RedHat` and `Suse` as the supported set
+means `cee_preflight`'s OS-family gate rejected the host outright, before
+any platform-specific check ran — most commonly a Windows or Debian-family
+host. This is expected: only RHEL 9 and SLES 15 are implemented today.
 
 **CEE runs, forwards nothing, and every check passes.** Look at
 `cee_facilities`. `cee_configure` requires the single enabled sub-facility

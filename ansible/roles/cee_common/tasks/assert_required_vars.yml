@@ -26,8 +26,10 @@
     fail_msg: >-
       One or more required variables are undefined. These roles ship no
       defaults on purpose. Copy ansible/group_vars/all.yml.example to
-      ansible/group_vars/all.yml and fill it in; every variable named in
-      this assertion is documented there. Required:
+      ansible/group_vars/all.yml, and ansible/group_vars/cee_linux.yml.example
+      or ansible/group_vars/cee_windows.yml.example (matching the host's
+      group) to the file without .example, and fill them in; every
+      variable named in this assertion is documented there. Required:
       cee_http_port, cee_https_port, cee_endpoints,
       cee_access_list_enabled, cee_access_list, cee_facilities,
       cee_manage_firewall, cee_log_path, cee_cache_size, cee_threads,

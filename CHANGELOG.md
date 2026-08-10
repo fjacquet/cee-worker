@@ -12,6 +12,11 @@ Dell CEE build and the useful version to know is CEE's own.
 
 ### Added
 
+- SLES 15 as a supported Ansible target: platform gate, zypper install,
+  mutation-tested negative tests.
+- `cee_common` role holding the variable, endpoint and sub-facility
+  gates, shared by every platform.
+- SLES rpm and Windows installer vendored in `bin/`, tracked in Git LFS.
 - Ansible deployment of CEE 9.2.0.0 to RHEL 9: `cee_preflight`,
   `cee_install`, `cee_configure` and `cee_verify` roles driven by
   `ansible/site.yml`
@@ -150,6 +155,11 @@ Dell CEE build and the useful version to know is CEE's own.
 
 ### Changed
 
+- The four roles dispatch on `ansible_os_family`. No behaviour change on
+  RHEL 9.
+- `cee_log_path` moves out of `group_vars/all.yml` into per-OS files.
+- Endpoint and sub-facility validation now runs before `cee_install`
+  rather than after.
 - `cee-exporter` publishes its CEPA listener on host port 12229 (mapping
   to container 12228). CEE's inbound listener owns 12228, so this lets the
   CEE host and the Docker host be the same machine
