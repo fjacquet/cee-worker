@@ -3,7 +3,9 @@
 #
 # Linux CEE hosts must be genuine RHEL 9 or SLES 15 — the playbook refuses
 # to continue otherwise, because CEE self-terminates on rebuilds such as
-# Rocky, AlmaLinux and openSUSE.
+# Rocky, AlmaLinux and openSUSE. Windows CEE hosts must be a genuine
+# Windows Server edition — client editions (Workstation) are rejected the
+# same way.
 all:
   children:
     cee:
@@ -27,7 +29,18 @@ all:
               # prompt nobody is there to answer:
               #     ssh-keyscan -H 10.10.10.20 >> ~/.ssh/known_hosts
 
-        # PHASE 2 — the roles reject Windows by name until the Windows
-        # branch lands. Leave this group empty until then.
+        # Windows Server support is implemented. A single
+        # ansible-playbook site.yml run has completed with failed=0
+        # against a real Windows Server 2025 Datacenter host, in the
+        # same play as RHEL and SLES hosts — see
+        # docs/ansible-deployment.md's Windows section for what that
+        # does and does not prove (WORKGROUP only, inbound port never
+        # opened). Example host:
+        #
+        # cee_windows:
+        #   hosts:
+        #     ceewin01.example.com:
+        #       ansible_host: 10.10.10.30
+        #       ansible_user: ceeadmin
         cee_windows:
           hosts: {}

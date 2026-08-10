@@ -1,58 +1,67 @@
 # Deploying CEE with Ansible
 
 This is the supported path for a PowerStore-facing CEE instance. Dell
-supports CEE on a RHEL or SLES VM or bare metal; the container in this
-repo is a lab sandbox only, RHEL-based, and not extended to SLES.
+supports CEE on a RHEL or SLES VM or bare metal, and on Windows Server;
+the container in this repo is a lab sandbox only, RHEL-based, and not
+extended to SLES or Windows.
 
-Windows Server support is **phase 2 and not implemented**. The
-OS-family gate in `cee_preflight` accepts only `RedHat` and `Suse`, so a
-Windows host that reaches that gate is rejected by name — but in
-practice a Windows target does not reach it: `site.yml` sets
-`gather_facts: true`, and the `ansible.builtin.setup` fact-gathering
-module is a POSIX Python module that crashes against a Windows host
-before any task in this playbook runs, and `ansible/requirements.yml`
-carries no `ansible.windows` collection to fix that. Windows support is
-absent at the connection layer, not merely rejected once reached — see
-the Windows section below for what is already known.
+All three platforms are implemented and have each run install,
+configuration and verification against a real host: a single
+`ansible-playbook site.yml` completes with `failed=0` against RHEL 9.8,
+SLES 15 SP7 and Windows Server 2025 Datacenter hosts in the same play
+(recap of the last run: `rhel ok=61 changed=2 failed=0`,
+`sles ok=60 changed=2 failed=0`, `winvm ok=56 changed=2 failed=0`). What
+that does **not** prove: no PowerStore array has ever been in the loop
+on any platform, so the actual event path is unverified — see the
+Windows section below and `docs/acceptance-tests.md` for exactly what is
+and is not established.
 
 ## Prerequisites
 
 - PowerStoreOS 4.1 or later
-- A **genuine RHEL 9.x or SLES 15 host** for CEE. RHEL-compatible
-  rebuilds such as Rocky and AlmaLinux do not work, and neither does
-  openSUSE: both CEE builds read the platform release files
-  (`/etc/redhat-release` on RHEL, `/etc/os-release` /
+- A **genuine RHEL 9.x host, SLES 15 host, or Windows Server host** for
+  CEE. RHEL-compatible rebuilds such as Rocky and AlmaLinux do not work,
+  and neither does openSUSE: both Linux CEE builds read the platform
+  release files (`/etc/redhat-release` on RHEL, `/etc/os-release` /
   `/etc/redhat-release` / `/etc/SuSE-release` on SLES) and self-terminate
   with a byte-identical message, `Platform is not supported / qualified.
   CEE will now terminate.`, unless they see the right product string.
+  Windows **client** editions are rejected the same way `cee_preflight`
+  rejects a Linux rebuild — Windows **Server** only.
 - **Git LFS on the control node.** `bin/*.rpm` and `bin/*.exe` are
   tracked with Git LFS (see `.gitattributes`). Run
   `git lfs install && git lfs pull` right after cloning. Skip it and the
-  SLES rpm is a ~130-byte pointer file, not the real package —
-  `cee_install`'s SLES branch will find exactly one file (the pointer
-  passes the uniqueness check unaltered) and hand it to `zypper`, which
-  then fails confusingly on a file that isn't an rpm. The RHEL rpm
-  predates LFS in this repo's history and stays a plain blob, so **this
-  only bites the SLES path** — a RHEL-only clone can look fine while
-  silently missing the guard for SLES.
+  SLES rpm (and the Windows exe) are ~130-byte pointer files, not the
+  real package — `cee_install`'s SLES and Windows branches will each find
+  exactly one file (the pointer passes the uniqueness check unaltered)
+  and hand it to `zypper` or `win_package`, which then fails confusingly
+  on a file that isn't a real rpm/exe. The RHEL rpm predates LFS in this
+  repo's history and stays a plain blob, so **this only bites the SLES
+  and Windows paths** — a RHEL-only clone can look fine while silently
+  missing the guard for the other two.
 - Time synchronised across the PowerStore array, the CEE host, and the
   consumer host
 - SMB configured on PowerStore; NFS optional
 - **TCP 12228 open inbound on the CEE host**, from the PowerStore NAS
-  server addresses. Both RHEL 9 and SLES 15 ship firewalld enabled with
-  only ssh allowed, so this is closed by default. The playbook opens it
-  (see `cee_manage_firewall` below); if a firewall elsewhere on the path
-  also filters it, open it there too.
+  server addresses. RHEL 9 and SLES 15 ship firewalld enabled with only
+  ssh allowed, and Windows Server ships Windows Firewall enabled, so this
+  is closed by default on all three. The playbook opens it (see
+  `cee_manage_firewall` below); if a firewall elsewhere on the path also
+  filters it, open it there too. **This has only been proven end to end
+  on Linux** — see the Windows section below.
 - **Outbound HTTPS (TCP 443) from the CEE host to `cdn-ubi.redhat.com` —
   RHEL only.** `cee_install` resolves the RHEL rpm's dependencies from
   the public UBI 9 content delivery network. Without this egress — an
   air-gapped host, or a proxy-only network — the dnf transaction fails.
   On a proxied network, set `proxy=` in `/etc/dnf/dnf.conf` on the target
-  before running the playbook. **SLES needs no equivalent egress**: see
-  the SLES section below.
+  before running the playbook. **SLES and Windows need no equivalent
+  egress**: see the SLES and Windows sections below.
 - Ansible on the control node (developed against core 2.21.2)
-- The `ansible.posix` and `community.general` collections (see Setup) —
-  neither is part of ansible-core
+- Four collections beyond ansible-core (see Setup): `ansible.posix`,
+  `community.general`, `ansible.windows`, `community.windows`
+- **For Windows only:** an SSH server on the target with `DefaultShell`
+  set to PowerShell, and the target reachable over SSH rather than WinRM
+  — see the Windows section below for connection details
 
 A Red Hat subscription is *not* required. The playbook adds the publicly
 reachable UBI 9 repositories for RHEL dependency resolution.
@@ -66,9 +75,13 @@ Pull the LFS-tracked vendor artefacts first, if not already present
     git lfs pull
 
 Install the collection dependencies next. `cee_configure` uses
-`ansible.posix.firewalld` and `cee_install`'s SLES branch uses
-`community.general.zypper`; neither ships with ansible-core, so without
-this even `--syntax-check` fails:
+`ansible.posix.firewalld` on Linux and `community.windows.win_firewall_rule`
+on Windows, `cee_install`'s SLES branch uses `community.general.zypper`,
+and the Windows branch throughout needs `ansible.windows` (it also
+supplies the Windows implementation of `setup`, so `gather_facts: true`
+in `site.yml` would crash against a Windows host without it). None of
+the four ships with ansible-core, so without this even `--syntax-check`
+fails:
 
     ansible-galaxy collection install -r ansible/requirements.yml
 
@@ -79,14 +92,15 @@ Then seed the inventory and variables:
     cp ansible/group_vars/cee_linux.yml.example ansible/group_vars/cee_linux.yml
     cp ansible/group_vars/cee_windows.yml.example ansible/group_vars/cee_windows.yml
 
-Edit the files that apply to your inventory. `cee_windows.yml` only
-needs editing once the Windows branch lands — a Linux-only operator does
-not need it at all: `group_vars/<group>.yml` for an inventory group with
-no hosts in it is never loaded, so an empty `cee_windows` group means the
-file is simply unused, not a gate that must be satisfied. `cee_log_path`
-lives in the per-OS files (`cee_linux.yml` / `cee_windows.yml`), not in
-`all.yml` — put the host in the inventory's `cee_linux` or `cee_windows`
-child group and it picks up the matching file automatically.
+Edit the files that apply to your inventory. A Linux-only operator does
+not need to touch `cee_windows.yml` at all: `group_vars/<group>.yml` for
+an inventory group with no hosts in it is never loaded, so an empty
+`cee_windows` group means the file is simply unused, not a gate that
+must be satisfied. `cee_log_path` is Linux-only and lives in
+`cee_linux.yml`, not in `all.yml` and not in `cee_windows.yml` — CEE has
+no log-path setting on Windows (see the Windows section below). Put the
+host in the inventory's `cee_linux` or `cee_windows` child group and it
+picks up the matching file automatically.
 
 In `group_vars/all.yml` the values that matter most:
 
@@ -117,11 +131,12 @@ role declares `become: true`, so sudo supplies privilege.
 ## SLES 15
 
 SLES 15 support is implemented, sharing every role with RHEL except
-`cee_preflight`'s platform gate and `cee_install`'s package-install step
-— but it is **unproven**: SLES has only ever run through localhost gate
-tests and lint in CI, never against a real host. Treat it the same way
-`docs/acceptance-tests.md` treats RHEL: implemented and covered by
-automated checks, not yet demonstrated end to end.
+`cee_preflight`'s platform gate and `cee_install`'s package-install step.
+It has run against a real host: `ansible-playbook site.yml` completed
+with `sles ok=60 changed=2 failed=0` against SLES 15 SP7. What that run
+does not prove is unchanged from RHEL — no PowerStore array has been in
+the loop, so the actual event path is still unverified; see
+`docs/acceptance-tests.md`.
 The only real difference: **SLES needs no repository setup at all.** The
 rpm's runtime dependencies — boost 1.88, openssl 3, libcurl 4 and
 jansson 4 — ship inside `/opt/CEEPack`; only glibc, `ld-linux` and a shell
@@ -139,59 +154,91 @@ rpms ship an identical payload: same `/opt/CEEPack`, same
 Put a SLES host in the inventory's `cee_linux` group exactly as for RHEL;
 `ansible_os_family` (`Suse`) does the rest of the routing.
 
-## Windows Server — phase 2, not implemented
+## Windows Server
 
-Windows is a planned target, not a supported one. `cee_preflight`'s
-OS-family gate accepts only `['RedHat', 'Suse']`, so a Windows host that
-reaches that task is rejected by name — but in this playbook a Windows
-host never gets that far: `site.yml` runs `gather_facts: true`, and
-`ansible.builtin.setup` is a POSIX Python module that fails against a
-Windows target before `assert_os_family.yml` runs, and no
-`ansible.windows` collection is pulled in to make that facts-gathering
-step work. In practice, Windows is unreachable at the connection layer,
-not merely turned away once reached. No `win_*` module exists anywhere in
-this tree, and the `cee_windows` inventory group is expected to stay
-empty until the branch lands.
+Windows Server support is implemented and has run against a real host:
+`ansible-playbook site.yml` completed with `winvm ok=56 changed=2
+failed=0` against Windows Server 2025 Datacenter, in the same play as
+the RHEL and SLES hosts. Two things about that run matter for how much
+to trust it:
 
-What is already known and documented, for when that branch starts:
+- **The host was WORKGROUP, not domain-joined.** Nothing that depends on
+  a domain — a domain service account, `EMC CAVA` running under a domain
+  security context, delegation — has been validated. Domain-joined
+  behaviour is unknown, not merely undocumented.
+- **The Windows host's inbound port was never opened** (the RHEL/SLES
+  hosts' reachability was only proven after opening an AWS security
+  group by hand, outside Ansible — the Windows host's was not opened at
+  all), so its network path from PowerStore's side is unverified, on top
+  of the array never having been in the loop on any platform.
+
+**The service that owns the CEPA listener is `EMC Checker Server`**
+(display name "EMC CAVA", binary `CAVA.exe`), measured on the live
+host — **not** `EMC CEE Monitor` (`CEEMtrSvc.exe`), despite the latter
+carrying "CEE" in its name. `cee_configure` and `cee_verify` drive
+`EMC Checker Server` deliberately; an operator who controls the monitor
+service instead will see it report `Running` while the port stays dead.
+
+What else is known, all measured against the live host rather than
+guessed:
 
 - **Connection**: Ansible reaches Windows Server over OpenSSH, not WinRM.
   The SSH server's `DefaultShell` must be set to PowerShell to match
   `ansible_shell_type: powershell` in `group_vars/cee_windows.yml.example`
   — if it is left as `cmd`, that setting must change to match.
 - **No credential delegation** over this transport (unlike WinRM with
-  CredSSP). Not expected to matter here: the installer is copied to the
-  host before it runs, so nothing needs a second hop to a network share.
-- **Domain membership is not required for the CEPA path.** The harvest
-  below was done on a standalone (`WORKGROUP`) host, not a domain-joined
-  one; nothing in the CEPA/Audit configuration flow needed a directory
-  account.
-- **Registry keys, silent-install flags, ProductCode, and the default
-  log path are no longer unknown** — `cee_windows.yml.example` provisionally
-  claimed a file-based log path, and that has since been harvested and
-  found false. `docs/superpowers/specs/2026-08-10-cee-windows-releve.md`
-  is the full record, run against a live CEE 9.2.0.0 and 9.3.0.0 install
-  on Windows Server 2025. Summary of what it found:
-  - The live configuration is a registry tree under
-    `HKLM:\SOFTWARE\EMC\CEE`, mirroring the Linux XML template's
-    `<Configuration>` and `<CEPP>` sections value-for-value (`HttpPort`,
-    `CacheSize`, `NumberOfThreads`, `Security\Http\ServerEnabled`, one
-    subtree per sub-facility, etc.).
-  - The silent-install command line that works:
-    `<installer>.exe /s /v"/qn /l*v <logfile>"`.
-  - ProductCode for 9.2.0.0: `{81F4A925-A885-4F58-8907-641BC7E82B99}`
-    (differs per version; always resolve `/x <GUID> /qn` from the
-    Uninstall registry key rather than hardcoding this).
-  - **There is no file-based log on Windows at all.** No `LogFile`
-    registry value exists anywhere under `HKLM:\SOFTWARE\EMC\CEE`, and no
-    `.log` files appear on disk after install or service start. CEE logs
-    exclusively to the Windows Application Event Log, under two sources:
-    `EMC CEE` and `CEE Monitor`. Phase 2's verification step for Windows
-    must query the Event Log (e.g. `Get-WinEvent`) — CEE 9.2.0.0 writes no
-    file-based log on Linux either, so this is not a Windows-specific
-    workaround; `cee_verify`'s Linux role reads `journalctl -u emc_cee`
-    for the same reason, and Windows needs its own equivalent mechanism
-    rather than a file search on either platform.
+  CredSSP). Not a problem here: the installer is copied to the host
+  before it runs, so nothing needs a second hop to a network share.
+- **SSH multiplexing is disabled** for Windows hosts via
+  `ansible_ssh_common_args` in `group_vars/cee_windows.yml.example`.
+  Multiplexing survives one-off interactive commands but wedges partway
+  through a play driving dozens of PowerShell module calls back to back
+  — the symptom is `Data could not be sent to remote host ... #<
+  CLIXML`, reported as **unreachable**, not as a task failure. This
+  overrides whatever `ControlMaster` setting the operator's own
+  `~/.ssh/config` carries; their interactive sessions keep multiplexing.
+- **Domain membership is not required for the CEPA path itself.** The
+  live host was standalone (`WORKGROUP`); nothing in the CEPA/Audit
+  configuration flow needed a directory account. (See the caveat above
+  about what that leaves unvalidated.)
+- **Registry configuration.** The live configuration is a registry tree
+  under `HKLM:\SOFTWARE\EMC\CEE`, mirroring the Linux XML template's
+  `<Configuration>` and `<CEPP>` sections value-for-value (`HttpPort`,
+  `CacheSize`, `NumberOfThreads`, `Security\Http\ServerEnabled`, one
+  subtree per sub-facility, etc.). `cee_configure`'s Windows branch
+  writes these with `win_regedit`. Full record:
+  `docs/superpowers/specs/2026-08-10-cee-windows-releve.md`.
+- **Silent install.** `<installer>.exe /s /v"/qn"` — a Flexera
+  InstallShield 27 wrapper, not a bare MSI, hence the explicit
+  `arguments`. ProductCode for 9.2.0.0:
+  `{81F4A925-A885-4F58-8907-641BC7E82B99}` (version-specific; do not
+  reuse it for a future CEE version without re-harvesting). The
+  registered `UninstallString` is `MsiExec.exe /I{GUID}` — that is `/I`,
+  **repair**, not `/X` — so any future uninstall automation must build
+  `msiexec /x <GUID> /qn` itself rather than reuse the registered
+  string. No uninstall automation exists in this repo.
+- **`Security\Http\ServerEnabled` ships `0` in 9.2.0.0**, exactly like
+  the Linux XML default, and `cee_configure`'s Windows branch writes it
+  to `1`. (9.3.0.0 ships it as `1`; this repo vendors and deploys
+  9.2.0.0 only, so do not restore any unscoped "9.x" wording.) The
+  listener binds `::` (the IPv6 wildcard), not an IPv4 address —
+  probing `127.0.0.1` still works under dual-stack, but the bind itself
+  is not IPv4.
+- **There is no file-based log on Windows at all.** No `LogFile`
+  registry value exists anywhere under `HKLM:\SOFTWARE\EMC\CEE`, and no
+  `.log` files appear on disk after install or service start. CEE logs
+  exclusively to the Windows Application Event Log, under two sources:
+  `EMC CEE` and `CEE Monitor`. `cee_verify`'s Windows branch queries the
+  Event Log with `Get-WinEvent`, anchored to the service's own start
+  time — CEE 9.2.0.0 writes no file-based log on Linux either, so this
+  is not a Windows-specific workaround; `cee_verify`'s Linux branch reads
+  `journalctl -u emc_cee` for the same reason, and each platform needs
+  its own equivalent mechanism rather than a file search on either one.
+- **`cee_log_path` is Linux-only.** It has no Windows equivalent and is
+  not defined in `cee_windows.yml.example`; it is asserted only by
+  `cee_preflight/tasks/assert_required_vars_linux.yml`, not by the
+  shared `cee_common` gate, so the platform-neutral role and its
+  localhost tests stay unaffected by a Windows-only concern.
 
 ## Run
 
@@ -202,28 +249,32 @@ The playbook runs five roles in order:
 
 | Role | Asserts / does |
 |---|---|
-| `cee_common` | Every required variable is defined, endpoints are well formed, sub-facilities are sane — platform-neutral, pure Jinja, shared by RHEL and SLES alike. Runs first, before anything touches the host. |
-| `cee_preflight` | Host is genuine RHEL 9 or SLES 15 (`ansible_os_family` routes to `RedHat.yml`/`Suse.yml`, `ansible_distribution` judges — Rocky/Alma and openSUSE are rejected by name); clock is synchronised; reports anything already bound to 12228 |
-| `cee_install` | RHEL: drops the UBI 9 repo definitions (disabled), installs the rpm with those repos enabled for that transaction only. SLES: `zypper` installs the rpm directly, no repo setup needed. Both verify `/opt/CEEPack` and the `emc_cee` unit exist |
-| `cee_configure` | Validates endpoints, asserts exactly one sub-facility *and* that it is Audit, renders the config, opens the inbound port in firewalld, enables the unit — identical on RHEL and SLES |
-| `cee_verify` | Unit active, port listening, journal shows CEE's own output, no unsupported-platform error — identical on RHEL and SLES |
+| `cee_common` | Every required variable is defined, endpoints are well formed, sub-facilities are sane — platform-neutral, pure Jinja, shared by RHEL, SLES and Windows alike. Runs first, before anything touches the host. |
+| `cee_preflight` | Host is genuine RHEL 9, SLES 15, or Windows Server (`ansible_os_family` routes to `RedHat.yml`/`Suse.yml`/`Windows.yml`; `ansible_distribution` judges Linux, `ansible_os_product_type` judges Windows — Rocky/Alma, openSUSE and Windows client editions are all rejected by name); clock is synchronised; reports anything already bound to 12228 |
+| `cee_install` | RHEL: drops the UBI 9 repo definitions (disabled), installs the rpm with those repos enabled for that transaction only. SLES: `zypper` installs the rpm directly, no repo setup needed. Windows: copies the exe and runs it silently via `win_package` against its ProductCode. All three verify the platform's installed layout exists |
+| `cee_configure` | Validates endpoints, asserts exactly one sub-facility *and* that it is Audit. Linux: renders the config, opens the inbound port in firewalld. Windows: writes the equivalent values into `HKLM:\SOFTWARE\EMC\CEE` with `win_regedit`, opens the port with `win_firewall_rule`. All three enable and start the service |
+| `cee_verify` | Service active, port listening, log/event evidence shows CEE's own output, no unsupported-platform error. Linux reads the journal; Windows reads the Application Event Log |
 
 Rerunning after a fix converges rather than stacking state. A config
-change restarts `emc_cee` via handler; an unchanged config does not.
+change restarts the CEE service via handler; an unchanged config does
+not.
 
-One caveat: `cee_install` stages the rpm to `/tmp` and deletes it again on
-every run, so those two tasks always report `changed` even when nothing
-was installed. dnf itself no-ops, so the host still converges — but a
-converged run reports `changed=2`, not `changed=0`.
+One caveat: `cee_install` stages the installer to a temp location and
+deletes it again on every run, so those two tasks always report
+`changed` even when nothing was installed — on every platform. The
+package manager (or `win_package`) itself no-ops, so the host still
+converges — but a converged run reports `changed=2`, not `changed=0`.
+This is the origin of the `changed=2` in every platform's recap above.
 
 ## Upgrading CEE
 
-Similar to the container path, per platform: remove the old RHEL rpm from
-`bin/` and drop the new one in for RHEL hosts, or the old SLES rpm for
-SLES hosts, then rerun the playbook. Each install role's glob requires
-exactly one matching file for its platform — `RedHat.yml` globs
-`emc_cee_RHEL-*.x86_64.rpm`, `Suse.yml` globs `emc_cee_SLES-*.x86_64.rpm`
-— so only the rpm for the platform being upgraded needs replacing.
+Similar to the container path, per platform: remove the old RHEL rpm,
+SLES rpm, or Windows exe from `bin/` and drop the new one in, then rerun
+the playbook. Each install role's glob requires exactly one matching
+file for its platform — `RedHat.yml` globs `emc_cee_RHEL-*.x86_64.rpm`,
+`Suse.yml` globs `emc_cee_SLES-*.x86_64.rpm`, `Windows.yml` globs the
+`.exe` — so only the artifact for the platform being upgraded needs
+replacing.
 
 ## After deployment
 
@@ -231,10 +282,11 @@ Configure the PowerStore side and run the end-to-end event test:
 `docs/powerstore-setup-runbook.md`.
 
 For the first deployment against real hardware, work through
-`docs/acceptance-tests.md` as well. Nothing on this branch has yet run
-against a live RHEL 9 host, a live SLES 15 host, or a live array, and that
-document is the plan for establishing that it does — including how to
-tell a real pass from a false one.
+`docs/acceptance-tests.md` as well. Install, configuration and
+verification have now run against real RHEL 9, SLES 15 and Windows
+Server hosts on this branch; no PowerStore array has been in the loop on
+any of them, and that document is the plan for establishing that it is —
+including how to tell a real pass from a false one.
 
 ## Troubleshooting
 
@@ -281,14 +333,16 @@ the list to decide whether to publish at all — when it is unavailable, no
 endpoint receives events, and its availability also governs whether
 events are re-sent later.
 
-**Preflight rejects the host.** The distribution message is not advisory.
-CEE will not run on a rebuild; use genuine RHEL 9 or genuine SLES 15.
+**Preflight rejects the host.** The distribution/edition message is not
+advisory. CEE will not run on a Linux rebuild or a Windows client
+edition; use genuine RHEL 9, genuine SLES 15, or Windows **Server**.
 
 **`ansible_os_family` is unsupported.** A message naming
-`ansible_os_family` and listing `RedHat` and `Suse` as the supported set
-means `cee_preflight`'s OS-family gate rejected the host outright, before
-any platform-specific check ran — most commonly a Windows or Debian-family
-host. This is expected: only RHEL 9 and SLES 15 are implemented today.
+`ansible_os_family` and listing `RedHat`, `Suse` and `Windows` as the
+supported set means `cee_preflight`'s OS-family gate rejected the host
+outright, before any platform-specific check ran — most commonly a
+Debian-family host. That is genuinely out of scope; nothing outside
+these three families is implemented.
 
 **CEE runs, forwards nothing, and every check passes.** Look at
 `cee_facilities`. `cee_configure` requires the single enabled sub-facility

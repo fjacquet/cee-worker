@@ -1,16 +1,16 @@
 ---
 # Copy to cee_windows.yml. Applies to every host in the cee_windows group.
 #
-# PHASE 2: the roles do not yet implement the Windows branch. cee_preflight's
-# OS-family gate names only ['RedHat', 'Suse'], so a Windows host that
-# reached it would be rejected by name — but in practice it never gets
-# that far: site.yml gathers facts with ansible.builtin.setup, a POSIX
-# Python module that fails against a Windows target before that gate
-# runs, and requirements.yml carries no ansible.windows collection to
-# make Windows fact-gathering work. Windows is unreachable at the
-# connection layer today, not merely turned away once reached. This file
-# exists so the connection settings are documented and CI can seed it
-# alongside the others.
+# Windows Server support is implemented. cee_preflight's OS-family gate
+# accepts 'Windows' and its platform gate requires a server edition
+# (ansible_os_product_type == 'server'; client editions are rejected by
+# name). A single ansible-playbook site.yml run has completed with
+# failed=0 against a real Windows Server 2025 Datacenter host, in the
+# same play as RHEL and SLES hosts. Two things that run has NOT proven:
+# the host was WORKGROUP, not domain-joined, so nothing domain-dependent
+# is validated; and its inbound port was never opened, so the network
+# path from PowerStore's side is unverified. See
+# docs/ansible-deployment.md's Windows section for the full picture.
 
 # Ansible reaches Windows Server over OpenSSH here, not WinRM. The SSH
 # server's DefaultShell must be PowerShell for ansible_shell_type below to
@@ -32,10 +32,18 @@ ansible_shell_type: powershell
 # docs/superpowers/specs/2026-08-10-cee-windows-releve.md for the full
 # harvest.
 #
-# PHASE 2: cee_verify's Windows equivalent must confirm health by
-# querying the Event Log (e.g. Get-WinEvent -LogName Application
-# -ProviderName 'EMC CEE') rather than by finding log files the way the
-# Linux role does. There is no cee_log_path variable for Windows.
+# cee_verify's Windows branch confirms health by querying the Event Log
+# (Get-WinEvent -LogName Application -ProviderName 'EMC CEE') rather than
+# by finding log files the way the Linux role does. There is no
+# cee_log_path variable for Windows — it is asserted Linux-only, in
+# cee_preflight/tasks/assert_required_vars_linux.yml, not by the shared
+# cee_common gate. Do not add it here.
+#
+# The service that owns the CEPA listener on 12228 is "EMC Checker
+# Server" (display name "EMC CAVA", binary CAVA.exe) — measured on the
+# live host, not "EMC CEE Monitor" (CEEMtrSvc.exe) despite the latter's
+# name. cee_configure and cee_verify drive EMC Checker Server
+# deliberately.
 
 # SSH multiplexing is disabled for Windows hosts on purpose. It works for
 # one-off interactive commands, but Ansible drives dozens of PowerShell

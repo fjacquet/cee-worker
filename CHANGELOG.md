@@ -12,6 +12,35 @@ Dell CEE build and the useful version to know is CEE's own.
 
 ### Added
 
+- Windows Server as a supported Ansible target: `cee_preflight`,
+  `cee_install`, `cee_configure` and `cee_verify` all gained a `Windows.yml`
+  branch (registry writes via `win_regedit` in place of the rendered XML
+  config, `win_firewall_rule` from the new `community.windows` collection,
+  `Get-WinEvent` against the Application Event Log in place of the
+  journal). A single `ansible-playbook site.yml` run now completes with
+  `failed=0` against RHEL 9.8, SLES 15 SP7 and Windows Server 2025
+  Datacenter in the same play (`rhel ok=61 changed=2 failed=0`,
+  `sles ok=60 changed=2 failed=0`, `winvm ok=56 changed=2 failed=0`). No
+  PowerStore array has been in the loop on any platform, and the Windows
+  host used was WORKGROUP with its inbound port never opened, so those
+  remain unverified — see `docs/acceptance-tests.md`.
+- The Windows service that owns the CEPA listener is `EMC Checker Server`
+  (display name "EMC CAVA", binary `CAVA.exe`), measured on a live host —
+  not `EMC CEE Monitor` (`CEEMtrSvc.exe`), despite the latter's name.
+  `cee_configure`/`cee_verify` drive `EMC Checker Server` deliberately.
+- `cee_log_path` moved out of the shared `cee_common` gate into
+  `cee_preflight/tasks/assert_required_vars_linux.yml`: it has no Windows
+  equivalent (CEE logs exclusively to the Application Event Log there,
+  with no log-path registry value anywhere under
+  `HKLM:\SOFTWARE\EMC\CEE`), and this keeps `cee_common` platform-neutral
+  so the localhost test suite keeps exercising every shared gate without
+  a VM.
+- `ansible/requirements.yml` declares `ansible.windows` (`win_package`,
+  `win_regedit`, `win_service`, `win_wait_for`, and the Windows
+  implementation of `setup` that `gather_facts: true` needs to not crash
+  against a Windows target) and `community.windows` (`win_firewall_rule`
+  — `ansible.windows` only ships `win_firewall`, which toggles a whole
+  profile rather than a single rule).
 - SLES 15 as a supported Ansible target: platform gate, zypper install,
   mutation-tested negative tests.
 - `cee_common` role holding the variable, endpoint and sub-facility

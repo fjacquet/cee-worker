@@ -1,17 +1,18 @@
 # cee-worker
 
-Dell Common Event Enabler (CEE) 9.2.0.0 — deployed to RHEL 9 or SLES 15
-with Ansible for PowerStore-facing use, and packaged as a container
-(RHEL-based only) for local experimentation. The rpm shipped in `bin/`
-is CEE **9.2.0.0**.
+Dell Common Event Enabler (CEE) 9.2.0.0 — deployed to RHEL 9, SLES 15 or
+Windows Server with Ansible for PowerStore-facing use, and packaged as a
+container (RHEL-based only) for local experimentation. The rpm/exe
+shipped in `bin/` is CEE **9.2.0.0**.
 
 ## Prerequisites
 
 - PowerStoreOS 4.1 or later
 - CEE 9.2 minimum
-- A genuine RHEL 9.x or SLES 15 host. RHEL-compatible rebuilds and
-  openSUSE are rejected: CEE reads the platform release files and
-  self-terminates unless it sees the right product string.
+- A genuine RHEL 9.x, SLES 15, or Windows **Server** host. RHEL-compatible
+  rebuilds, openSUSE, and Windows client editions are rejected: CEE reads
+  the platform release files (or, on Windows, requires a server product
+  type) and self-terminates unless it sees the right string.
 - **Git LFS**: `bin/*.rpm` and `bin/*.exe` are tracked with Git LFS (see
   `.gitattributes`). Run `git lfs install && git lfs pull` after cloning.
   Without it, the SLES rpm (a plain blob is unaffected on RHEL) is a
@@ -22,12 +23,15 @@ is CEE **9.2.0.0**.
 - SMB configured on PowerStore (NFS optional)
 - TCP 12228 reachable between PowerStore and the CEE host
 
-## Path 1: Ansible on RHEL 9 or SLES 15 (supported)
+## Path 1: Ansible on RHEL 9, SLES 15 or Windows Server (supported)
 
-Dell supports CEE on a RHEL or SLES VM or bare metal, so this is the path
-for anything PowerStore-facing. SLES 15 support in this repo is
-implemented and lint/gate-tested but has not yet been deployed to a real
-host — see `docs/ansible-deployment.md`.
+Dell supports CEE on RHEL, SLES or Windows Server, so this is the path
+for anything PowerStore-facing. All three platforms are implemented and
+have each run install, configuration and verification against a real
+host — a single `ansible-playbook site.yml` completes with `failed=0`
+across RHEL 9.8, SLES 15 SP7 and Windows Server 2025 Datacenter hosts in
+one play. No PowerStore array has been in that loop on any platform —
+see `docs/ansible-deployment.md` for exactly what is and is not proven.
 
 See `docs/ansible-deployment.md` for prerequisites, setup, and the
 five-role playbook, and `docs/powerstore-setup-runbook.md` for configuring

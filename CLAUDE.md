@@ -11,10 +11,12 @@ Dockerfile, and docs.
 
 Two paths, deliberately unequal:
 
-- **Ansible → RHEL 9 and SLES 15** (`ansible/`) — the supported path.
-  Anything PowerStore-facing goes here. Windows Server is phase 2 and
-  **not implemented**: the OS-family gate accepts only `RedHat` and
-  `Suse` and rejects Windows by name.
+- **Ansible → RHEL 9, SLES 15 and Windows Server** (`ansible/`) — the
+  supported path. Anything PowerStore-facing goes here. All three
+  platforms are implemented: the OS-family gate accepts `RedHat`, `Suse`
+  and `Windows`. A single `ansible-playbook site.yml` completes with
+  `failed=0` against real RHEL 9.8, SLES 15 SP7 and Windows Server 2025
+  Datacenter hosts in the same play.
 - **Container** (`Dockerfile`, `docker-compose.yml`) — lab sandbox only,
   unsupported by Dell, never produced a working end-to-end event path,
   RHEL-only. Useful for poking at the CEE process itself. Not extended to
@@ -35,9 +37,12 @@ ansible-galaxy collection install -r ansible/requirements.yml  # must precede th
 yamllint ansible/ .github/
 cd ansible && ansible-playbook --syntax-check site.yml
 ansible-lint ansible/                                          # production profile
-# requirements.yml pulls two collections beyond ansible-core:
-# ansible.posix (firewalld) and community.general (zypper on SLES).
-# Deliberately NOT ansible.windows — no win_* module exists in the tree yet.
+# requirements.yml pulls four collections beyond ansible-core:
+# ansible.posix (firewalld), community.general (zypper on SLES),
+# ansible.windows (win_package, win_regedit, win_service, win_wait_for,
+# and the Windows implementation of setup — gather_facts crashes against
+# a Windows host without it) and community.windows (win_firewall_rule;
+# ansible.windows only ships win_firewall, which toggles a whole profile).
 
 # Deploy (needs ansible/inventory/hosts.yml + ansible/group_vars/all.yml,
 # both gitignored — copy from the .example files)
@@ -64,37 +69,42 @@ docker compose -f docker-compose.test.yml run --rm pstcli -version
 
 | Role | Responsibility |
 |---|---|
-| `cee_common` | Platform-neutral gates, pure Jinja, shared by every OS: required vars defined, endpoints valid, sub-facilities sane. Runs first — everything here can fail before a single byte reaches the host. |
-| `cee_preflight` | Genuine RHEL 9 or SLES 15; clock synced; reports a pre-existing listener on `cee_http_port` |
-| `cee_install` | RHEL: UBI 9 repos (installed disabled, `enablerepo`'d for one transaction), then the rpm. SLES: `community.general.zypper` installs the rpm directly, no repo setup. Both assert the `/opt/CEEPack` + `emc_cee.service` layout |
-| `cee_configure` | Validates endpoints, gates sub-facilities, renders `emc_cee_config.xml.j2`, opens firewalld, enables the unit — one shared task file for RHEL and SLES |
-| `cee_verify` | Unit active, port listening, log written, no unsupported-platform line — also shared |
+| `cee_common` | Platform-neutral gates, pure Jinja, shared by every OS: required vars defined, endpoints valid, sub-facilities sane. Runs first — everything here can fail before a single byte reaches the host. `cee_log_path` is deliberately **not** here — see below. |
+| `cee_preflight` | Genuine RHEL 9, SLES 15, or Windows Server (client editions rejected); clock synced; reports a pre-existing listener on `cee_http_port` |
+| `cee_install` | RHEL: UBI 9 repos (installed disabled, `enablerepo`'d for one transaction), then the rpm. SLES: `community.general.zypper` installs the rpm directly, no repo setup. Windows: `win_copy` stages the exe, `win_package` runs it silently against its ProductCode. All three assert the installed layout (`/opt/CEEPack` + `emc_cee.service` on Linux; `CAVA.exe` + `CEEMtrSvc.exe` on Windows) |
+| `cee_configure` | Validates endpoints, gates sub-facilities. Linux: renders `emc_cee_config.xml.j2`, opens firewalld. Windows: writes the same values as `win_regedit` under `HKLM:\SOFTWARE\EMC\CEE`, opens the port with `community.windows.win_firewall_rule`. Both enable and start the service |
+| `cee_verify` | Unit/service active, port listening, log/event evidence written, no unsupported-platform line. Linux reads `journalctl`; Windows reads the Application Event Log — see below |
 
 **The dispatch routes; the gate judges.** Every role dispatches on
-`ansible_os_family` (`RedHat.yml` / `Suse.yml` / `Linux.yml`). But the
-platform gates in `cee_preflight` judge on the stricter
-`ansible_distribution`, so Rocky and AlmaLinux (`ansible_os_family ==
-'RedHat'`) are routed into `RedHat.yml` and rejected there by name, and
-openSUSE (`ansible_os_family == 'Suse'`) is routed into `Suse.yml` and
-rejected there by name. Dispatching on the coarser fact and judging on
-the finer one is what lets one file name the specific rebuild that failed.
+`ansible_os_family` (`RedHat.yml` / `Suse.yml` / `Windows.yml` /
+`Linux.yml`). But the platform gates in `cee_preflight` judge on a
+stricter fact, so Rocky and AlmaLinux (`ansible_os_family == 'RedHat'`)
+are routed into `RedHat.yml` and rejected there by name, openSUSE
+(`ansible_os_family == 'Suse'`) is routed into `Suse.yml` and rejected
+there by name, and Windows client editions (`ansible_os_family ==
+'Windows'`, judged on `ansible_os_product_type`) are routed into
+`Windows.yml` and rejected there for not being a server SKU. Dispatching
+on the coarser fact and judging on the finer one is what lets one file
+name the specific rebuild — or edition — that failed.
 
 Gates live in their own task files under `cee_common/tasks/`
 (`assert_required_vars.yml`, `assert_facilities.yml`,
 `validate_endpoints.yml`) and `cee_preflight/tasks/`
 (`assert_os_family.yml`, `assert_platform_RedHat.yml`,
-`assert_platform_Suse.yml`), specifically so `ansible/tests/` can include
-them with deliberately wrong input. Keep that split when adding a gate.
+`assert_platform_Suse.yml`, `assert_platform_Windows.yml`), specifically
+so `ansible/tests/` can include them with deliberately wrong input. Keep
+that split when adding a gate.
 
 `bin/` holds three artifacts, all CEE 9.2.0.0: `emc_cee_RHEL-*.x86_64.rpm`,
 `emc_cee_SLES-*.x86_64.rpm`, and `EMC_CEE_Pack_x64_9_2_0_0.exe`. Each glob
 targets its own platform — the Dockerfile globs only the RHEL rpm (the
-container is not extended to SLES), `cee_install`'s `RedHat.yml` globs the
-RHEL rpm, and its `Suse.yml` globs the SLES rpm. Each glob requires
-exactly one matching file; remove the old one before adding a new one.
-`.gitattributes` puts `bin/*.rpm` and `bin/*.exe` in Git LFS, but only for
-future commits — the RHEL rpm predates it and stays an ordinary blob
-deliberately, to avoid rewriting history for a 4 MB file.
+container is not extended to SLES or Windows), `cee_install`'s
+`RedHat.yml` globs the RHEL rpm, its `Suse.yml` globs the SLES rpm, and
+its `Windows.yml` globs the exe. Each glob requires exactly one matching
+file; remove the old one before adding a new one. `.gitattributes` puts
+`bin/*.rpm` and `bin/*.exe` in Git LFS, but only for future commits — the
+RHEL rpm predates it and stays an ordinary blob deliberately, to avoid
+rewriting history for a 4 MB file.
 
 The design philosophy throughout: **CEE fails silently**. Its historical
 failure signature was an empty log directory and no signal. Every
@@ -103,20 +113,29 @@ generically, and verification is a first-class role, not a postscript.
 Match that when adding checks.
 
 That signature turned out to be a misreading, and the correction is
-instructive. **CEE 9.2.0.0 writes no log file at all.** On Linux it logs
-to stdout, which systemd captures into the journal; on Windows it logs
-to the Application Event Log. Measured on RHEL 9.8 and SLES 15 SP7:
-`/opt/CEEPack/logs/` stays empty even with `Debug=1 Verbose=1`, and the
-process holds no log file descriptor. `<LogFile><Path>` is rendered into
-the config and ignored.
+instructive. **CEE 9.2.0.0 writes no log file at all, on any platform.**
+On Linux it logs to stdout, which systemd captures into the journal; on
+Windows it logs to the Application Event Log, sources `EMC CEE` and
+`CEE Monitor`, with no log-path setting anywhere under
+`HKLM:\SOFTWARE\EMC\CEE`. Measured on RHEL 9.8, SLES 15 SP7 and Windows
+Server 2025 Datacenter: `/opt/CEEPack/logs/` stays empty on Linux even
+with `Debug=1 Verbose=1`, and the Windows registry tree holds no
+`LogFile` value at all. `<LogFile><Path>` is rendered into the Linux
+config and ignored. This is why `cee_log_path` is a Linux-only variable
+— it left `cee_common`'s neutral gate for
+`cee_preflight/tasks/assert_required_vars_linux.yml`, so the shared role
+stays platform-neutral and the localhost test suite can keep exercising
+every shared gate with no VM.
 
-So `cee_verify` reads `journalctl -u emc_cee`, anchored to the unit's own
-`ActiveEnterTimestamp` so a line from an earlier boot cannot fail a
-healthy run. It matches CEE's own `[EMC CEE]` prefix rather than testing
-that the journal is non-empty — systemd writes "Started CEE Service"
-whether or not the process ever speaks, so a non-empty test would pass
-against a CEE that started and went mute. The empty directory was never
-the failure signature; it was always the normal state, and the two checks
+So `cee_verify` reads `journalctl -u emc_cee` on Linux, anchored to the
+unit's own `ActiveEnterTimestamp` so a line from an earlier boot cannot
+fail a healthy run, matching CEE's own `[EMC CEE]` prefix rather than
+testing that the journal is non-empty — systemd writes "Started CEE
+Service" whether or not the process ever speaks, so a non-empty test
+would pass against a CEE that started and went mute. On Windows it reads
+`Get-WinEvent` against the Application Event Log, anchored to the
+service's own start time the same way. The empty directory was never the
+failure signature; it was always the normal state, and the two checks
 that read it could not pass on any real host.
 
 ## Constraints that bite
@@ -164,6 +183,27 @@ that read it could not pass on any real host.
   /opt/CEEPack` (the vendor systemd unit sets `WorkingDirectory` for the
   same reason). PID 1 is `emc_cee.exe` itself, so `docker logs` shows
   nothing — read `./logs` or `docker exec … tail -f`.
+- **The Windows service that owns the CEPA listener is `EMC Checker
+  Server`** (display name "EMC CAVA", binary `CAVA.exe`), not `EMC CEE
+  Monitor` (`CEEMtrSvc.exe`) despite the latter's name. `cee_configure`
+  and `cee_verify` drive `EMC Checker Server` deliberately; controlling
+  the monitor instead would leave the port dead while reporting
+  `Running`.
+- **Windows installer specifics, all measured, not guessed.** ProductCode
+  `{81F4A925-A885-4F58-8907-641BC7E82B99}` is version-specific to
+  9.2.0.0. Silent install is `/s /v"/qn"` — a Flexera InstallShield 27
+  wrapper, not a bare MSI. The registered UninstallString is
+  `MsiExec.exe /I{GUID}` (`/I`, repair, not `/X`); any future uninstall
+  automation must build `msiexec /x <GUID> /qn` itself rather than reuse
+  the registered string.
+- **Windows hosts disable SSH multiplexing** via `ansible_ssh_common_args`
+  in `group_vars/cee_windows.yml`. Multiplexing survives one-off
+  commands but wedges partway through a play; the symptom is `Data could
+  not be sent to remote host ... #< CLIXML`, reported as *unreachable*
+  rather than as a task failure.
+- **`win_firewall_rule` lives in `community.windows`, not
+  `ansible.windows`** — the latter only ships `win_firewall`, which
+  toggles a whole profile rather than a single rule.
 
 ## Ansible idioms used here (don't "clean up")
 
@@ -196,8 +236,12 @@ that read it could not pass on any real host.
 - `docs/ansible-deployment.md` — prerequisites, setup, troubleshooting
 - `docs/powerstore-setup-runbook.md` — the array side + end-to-end event test
 - `docs/acceptance-tests.md` — the plan for the first live deployment.
-  Nothing here has run against real hardware; that document is explicit
-  about what CI does and does not prove. Don't state otherwise.
+  Install, configuration and verification have now run against real
+  RHEL 9, SLES 15 and Windows Server hosts on this branch; the
+  end-to-end event path has not, because no PowerStore array has ever
+  been in the loop on any platform. That document is explicit about
+  which of its tests that leaves proven and which remain to be run.
+  Don't state otherwise.
 - `docs/cee-8-x-linux-guide_en-us.pdf` covers CEE **8.x** while the rpm is
   **9.2.0.0**. Config and security semantics diverged (secure defaults).
   Treat it as a general reference, cross-check anything config-related.
