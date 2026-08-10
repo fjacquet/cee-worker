@@ -108,3 +108,36 @@
   tasks:
     - name: Assert platform
       ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_Suse.yml
+
+- name: A Windows client edition is rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_distribution: Microsoft Windows 11 Pro
+    ansible_os_product_type: workstation
+  tasks:
+    - name: Expect the platform gate to fail
+      block:
+        - name: Assert platform
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_Windows.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation did not reject a Windows client edition."
+      rescue:
+        - name: Confirm it failed for the server-edition reason
+          ansible.builtin.assert:
+            that:
+              - "'server-side service' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the Windows Server edition message."
+
+- name: Windows Server passes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_distribution: Microsoft Windows Server 2025 Datacenter
+    ansible_os_product_type: server
+  tasks:
+    - name: Assert platform
+      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_Windows.yml

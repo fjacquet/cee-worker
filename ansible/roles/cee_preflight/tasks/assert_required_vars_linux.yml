@@ -1,0 +1,28 @@
+---
+# Linux-only variable gate. Isolated from preflight_linux.yml so tests/
+# can include it with a deliberately incomplete variable set, like every
+# other gate in this repo.
+#
+# cee_log_path lives here rather than in cee_common because it has no
+# Windows equivalent. CEE 9.2.0.0 on Windows logs to the Application
+# Event Log and exposes no log-path setting anywhere under
+# HKLM:\SOFTWARE\EMC\CEE — measured, see
+# docs/superpowers/specs/2026-08-10-cee-windows-releve.md.
+#
+# The alternative was a `when: ansible_os_family != 'Windows'` inside
+# cee_common. That was rejected deliberately: cee_common is neutral by
+# construction, and that neutrality is what lets ansible/tests/ exercise
+# every shared gate on a localhost control node with no VM and no
+# network. One platform condition there invites the next, until the
+# shared role is a pile of branches no localhost test can cover.
+
+- name: Linux hosts must define cee_log_path
+  ansible.builtin.assert:
+    that:
+      - cee_log_path is defined
+    fail_msg: >-
+      cee_log_path is undefined. Copy
+      ansible/group_vars/cee_linux.yml.example to
+      ansible/group_vars/cee_linux.yml and fill it in. This variable is
+      Linux-only — it is rendered into emc_cee_config.xml for config
+      consistency, and Windows has no equivalent setting at all.

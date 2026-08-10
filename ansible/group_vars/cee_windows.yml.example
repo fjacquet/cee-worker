@@ -36,3 +36,15 @@ ansible_shell_type: powershell
 # querying the Event Log (e.g. Get-WinEvent -LogName Application
 # -ProviderName 'EMC CEE') rather than by finding log files the way the
 # Linux role does. There is no cee_log_path variable for Windows.
+
+# SSH multiplexing is disabled for Windows hosts on purpose. It works for
+# one-off interactive commands, but Ansible drives dozens of PowerShell
+# module calls back to back over one connection and the shared
+# ControlMaster channel wedges partway through — the symptom is
+# "Data could not be sent to remote host ... #< CLIXML" mid-play, reported
+# as unreachable rather than as a task failure. Observed against Windows
+# Server 2025 with DefaultShell = pwsh.
+#
+# This overrides whatever ControlMaster setting the operator's
+# ~/.ssh/config carries, so their interactive sessions keep multiplexing.
+ansible_ssh_common_args: '-o ControlMaster=no -o ControlPath=none'

@@ -1,0 +1,62 @@
+---
+# Host checks for Windows. Same two questions preflight_linux.yml asks —
+# is the clock synchronised, is anything already on the CEE port — with
+# the only mechanisms a Windows Server has.
+#
+# Nothing here is a POSIX module. chronyc and ansible.builtin.wait_for run
+# target-side under Python, which a Windows Server does not have; w32tm
+# and ansible.windows.win_wait_for are the equivalents.
+#
+# cee_log_path is deliberately not required on this platform. CEE 9.2.0.0
+# on Windows writes no log file and exposes no log-path setting anywhere
+# under HKLM:\SOFTWARE\EMC\CEE — measured, see
+# docs/superpowers/specs/2026-08-10-cee-windows-releve.md. The Linux
+# branch asserts it in assert_required_vars_linux.yml; there is no
+# Windows counterpart because there is nothing to point at.
+
+- name: Query the Windows time service
+  ansible.windows.win_shell: w32tm /query /status
+  register: cee_preflight_w32tm
+  changed_when: false
+  failed_when: false
+
+- name: Clock must be synchronised
+  # Not looped, like every assert in this repo: a failure inside a looped
+  # assert is wrapped as {"msg": "One or more items failed", ...} and the
+  # real fail_msg stops being visible where it matters.
+  #
+  # w32tm reports a Source and a last-sync time on a healthy host. An
+  # unsynchronised one reports "unspecified" as its source, or the command
+  # fails outright.
+  ansible.builtin.assert:
+    that:
+      - cee_preflight_w32tm.rc == 0
+      - "'unspecified' not in (cee_preflight_w32tm.stdout | lower)"
+    fail_msg: >-
+      The Windows Time service reports no usable time source
+      (rc={{ cee_preflight_w32tm.rc }}). The PowerStore array, this CEE
+      host and the consumer must agree on time or events are rejected or
+      misordered. Fix w32tm before continuing — `w32tm /query /status`
+      on the host shows what it thinks its source is.
+
+- name: Check whether the CEE port is already in use
+  ansible.windows.win_wait_for:
+    port: "{{ cee_http_port }}"
+    host: 127.0.0.1
+    state: stopped
+    timeout: 3
+  register: cee_preflight_port_free
+  # ignore_errors, not failed_when: false — the task below inspects this
+  # registered result, and failed_when would overwrite its own `failed`
+  # key, making a timed-out probe indistinguishable from a clear one.
+  ignore_errors: true
+
+- name: Report a pre-existing listener on the CEE port
+  ansible.builtin.debug:
+    msg: >-
+      Something is already listening on {{ cee_http_port }}. If this is a
+      previous CEE instance the playbook will reconfigure it; if it is
+      another service, CEE will fail to bind. On Windows the listener is
+      owned by CAVA.exe, not by a process named after CEE — check with
+      `Get-NetTCPConnection -LocalPort {{ cee_http_port }} -State Listen`.
+  when: cee_preflight_port_free is failed

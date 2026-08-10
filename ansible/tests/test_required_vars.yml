@@ -180,3 +180,38 @@
   tasks:
     - name: Assert required vars
       ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_required_vars.yml
+
+# cee_log_path left cee_common when Windows support landed: CEE 9.2.0.0
+# on Windows has no log-path setting anywhere in its registry tree. The
+# gate now lives in the Linux branch of cee_preflight, and still has to
+# name the right example file.
+- name: A missing cee_log_path is rejected on Linux
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_http_port: 12228
+  tasks:
+    - name: Expect the Linux-only variable gate to fail
+      block:
+        - name: Assert the Linux-only variables
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_linux.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation did not reject the missing cee_log_path."
+      rescue:
+        - name: Confirm it failed for the cee_log_path reason
+          ansible.builtin.assert:
+            that:
+              - "'cee_linux.yml.example' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the Linux-only cee_log_path message."
+
+- name: A defined cee_log_path passes the Linux gate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_log_path: /opt/CEEPack/logs/
+  tasks:
+    - name: Assert the Linux-only variables
+      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_linux.yml

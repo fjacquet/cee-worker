@@ -7,6 +7,9 @@
 # Python, and a Windows Server has neither. The Windows branch reimplements
 # the same two checks with w32tm and ansible.windows.win_wait_for.
 
+- name: Assert the Linux-only variables are defined
+  ansible.builtin.include_tasks: assert_required_vars_linux.yml
+
 - name: Check whether chrony is present
   ansible.builtin.stat:
     path: /usr/bin/chronyc

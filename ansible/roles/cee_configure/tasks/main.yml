@@ -4,8 +4,9 @@
 # emc_cee.service with WorkingDirectory=/opt/CEEPack and User=ceesvc — so
 # there is nothing to branch on between them.
 #
-# Phase 2 turns this into a two-way dispatch: Windows configures through
-# HKLM registry keys, not the XML template.
+# Windows configures through HKLM registry keys, not the XML template,
+# so it gets its own file.
 
 - name: Run the platform-specific configuration
-  ansible.builtin.include_tasks: Linux.yml
+  ansible.builtin.include_tasks:
+    file: "{{ 'Windows.yml' if ansible_os_family == 'Windows' else 'Linux.yml' }}"

@@ -3,7 +3,9 @@
 # log line this role greps for — "Platform is not supported / qualified.
 # CEE will now terminate." — is byte-identical in both builds.
 #
-# Phase 2 turns this into a two-way dispatch.
+# Windows verifies through the Application event log and win_service,
+# so it gets its own file.
 
 - name: Run the platform-specific verification
-  ansible.builtin.include_tasks: Linux.yml
+  ansible.builtin.include_tasks:
+    file: "{{ 'Windows.yml' if ansible_os_family == 'Windows' else 'Linux.yml' }}"

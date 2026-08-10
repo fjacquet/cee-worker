@@ -1,0 +1,6 @@
+---
+- name: Assert the platform is a Windows Server edition
+  ansible.builtin.include_tasks: assert_platform_Windows.yml
+
+- name: Run the Windows preflight checks
+  ansible.builtin.include_tasks: preflight_windows.yml

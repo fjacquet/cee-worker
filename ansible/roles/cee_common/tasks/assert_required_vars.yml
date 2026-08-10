@@ -18,7 +18,6 @@
       - cee_access_list is defined
       - cee_facilities is defined
       - cee_manage_firewall is defined
-      - cee_log_path is defined
       - cee_cache_size is defined
       - cee_threads is defined
       - cee_debug is defined
@@ -32,7 +31,7 @@
       variable named in this assertion is documented there. Required:
       cee_http_port, cee_https_port, cee_endpoints,
       cee_access_list_enabled, cee_access_list, cee_facilities,
-      cee_manage_firewall, cee_log_path, cee_cache_size, cee_threads,
+      cee_manage_firewall, cee_cache_size, cee_threads,
       cee_debug, cee_verbose.
 
 # Defined is not enough. An out-of-range listener port reaches firewalld

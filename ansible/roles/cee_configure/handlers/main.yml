@@ -15,3 +15,10 @@
     daemon_reload: true
   become: true
   when: ansible_os_family != 'Windows'
+
+# Windows restart body lives in tasks/restart_windows.yml — see the
+# comment there for why it is not inlined here.
+- name: Restart emc_cee on Windows
+  listen: Restart emc_cee
+  ansible.builtin.include_tasks: restart_windows.yml
+  when: ansible_os_family == 'Windows'

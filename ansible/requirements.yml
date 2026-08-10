@@ -21,3 +21,21 @@ collections:
   # be installed.
   - name: community.general
     version: ">=12.0.0"
+
+  # ansible.windows supplies win_package, win_regedit, win_service,
+  # win_service_info, win_firewall_rule, win_wait_for, win_copy, win_stat
+  # and the Windows implementation of `setup`. That last one matters more
+  # than it looks: site.yml sets gather_facts: true, and
+  # ansible.builtin.setup is a POSIX module executed target-side under
+  # Python — which a Windows Server does not have. Without this
+  # collection a Windows host crashes during fact gathering, before the
+  # OS-family gate can say anything useful about it.
+  - name: ansible.windows
+    version: ">=2.5.0"
+
+  # community.windows supplies community.windows.win_firewall_rule, used
+  # by the Windows branch of cee_configure. ansible.windows ships
+  # win_firewall (enable/disable a profile) but not the per-rule module,
+  # so both Windows collections are needed, not one.
+  - name: community.windows
+    version: ">=3.0.0"

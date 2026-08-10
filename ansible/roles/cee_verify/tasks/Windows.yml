@@ -1,0 +1,116 @@
+---
+# Verification is a first-class step here, and each assertion names the
+# specific thing that is wrong. Same four questions the Linux branch
+# asks — service up, port listening, CEE said something, CEE did not
+# reject the platform — with the only mechanisms Windows offers.
+
+- name: Flush handlers so any pending restart happens before verification
+  ansible.builtin.meta: flush_handlers
+
+# EMC Checker Server (display name "EMC CAVA", binary CAVA.exe) is the
+# service that owns the CEPA listener, measured. EMC CEE Monitor is not.
+# Checking the wrong one would report a healthy service beside a dead
+# port.
+- name: Query the CEE service state
+  ansible.windows.win_service_info:
+    name: EMC Checker Server
+  register: cee_verify_service
+
+- name: The CEE service must be running
+  ansible.builtin.assert:
+    that:
+      - cee_verify_service.services | length == 1
+      - cee_verify_service.services[0].state == 'started'
+    fail_msg: >-
+      EMC Checker Server (display name "EMC CAVA") is not running. That is
+      the service carrying the CEPA HTTP listener on this platform,
+      despite its antivirus name — EMC CEE Monitor is not a substitute.
+      Read the Application event log, sources "EMC CEE" and "CEE Monitor";
+      CEE writes no log file on Windows.
+
+- name: CEE must be listening on its inbound port
+  ansible.windows.win_wait_for:
+    port: "{{ cee_http_port }}"
+    host: 127.0.0.1
+    state: started
+    timeout: 30
+  register: cee_verify_listening
+  # ignore_errors, not failed_when: false — the assert below inspects
+  # this registered result, and failed_when would overwrite its own
+  # `failed` key, making a timed-out probe indistinguishable from a
+  # successful one.
+  ignore_errors: true
+
+- name: Report a missing listener with the likely cause
+  # The probe targets 127.0.0.1 while CEE actually binds :: (the IPv6
+  # wildcard) — that works on a dual-stack host, which is every supported
+  # Windows Server, but it is worth knowing the bind is not IPv4.
+  ansible.builtin.assert:
+    that:
+      - cee_verify_listening is not failed
+    fail_msg: >-
+      Nothing is listening on {{ cee_http_port }}. CEE 9.2.0.0 ships
+      Security\Http\ServerEnabled = 0 on Windows — confirmed against a
+      fresh install — so the first thing to check is that
+      HKLM:\SOFTWARE\EMC\CEE\Configuration\Security\Http\ServerEnabled is
+      now 1 and that EMC Checker Server was restarted after it changed.
+
+- name: Read CEE's own entries from the Application event log
+  # The Windows counterpart of the journald read on Linux. CEE 9.2.0.0
+  # writes no log file on this platform: there is no LogFile value
+  # anywhere under HKLM:\SOFTWARE\EMC\CEE and no .log file appears on
+  # disk. It logs to the Application event log under two registered
+  # sources, "EMC CEE" and "CEE Monitor".
+  #
+  # StartTime is anchored to this service's own last start, so an entry
+  # from an earlier run cannot fail a healthy deployment forever — the
+  # same reasoning as the ActiveEnterTimestamp anchor on Linux.
+  ansible.windows.win_shell: |
+    $svc = Get-CimInstance Win32_Service -Filter "Name='EMC Checker Server'"
+    $proc = Get-Process -Id $svc.ProcessId -ErrorAction SilentlyContinue
+    $since = if ($proc) { $proc.StartTime } else { (Get-Date).AddMinutes(-10) }
+    Get-WinEvent -FilterHashtable @{
+        LogName      = 'Application'
+        ProviderName = 'EMC CEE'
+        StartTime    = $since
+    } -ErrorAction SilentlyContinue |
+      ForEach-Object { "{0} [{1}] {2}" -f $_.TimeCreated, $_.Id, $_.Message }
+  register: cee_verify_eventlog
+  changed_when: false
+
+- name: CEE itself must have logged, not just the service control manager
+  # Deliberately requires entries from the "EMC CEE" provider rather than
+  # any non-empty output. The service control manager reports a service
+  # as started whether or not the process ever says a word, so a
+  # non-empty test would pass against a CEE that came up mute — the exact
+  # failure class this role exists to catch. This is the counterpart of
+  # matching '[EMC CEE]' in the journal on Linux.
+  ansible.builtin.assert:
+    that:
+      - cee_verify_eventlog.stdout | trim | length > 0
+    fail_msg: >-
+      EMC Checker Server is running but the "EMC CEE" event source has
+      written nothing since the process started. The service control
+      manager can report a service as started while the process is mute.
+      Check the Application event log on the host: a healthy start logs
+      event 104 "Starting the EMC CAVA service, version 9.2.0.0." and 134
+      "... was successfully started."
+
+- name: The event log must not report an unsupported platform
+  ansible.builtin.assert:
+    that:
+      - "'Platform is not supported' not in cee_verify_eventlog.stdout"
+    fail_msg: >-
+      CEE reports an unsupported platform and will self-terminate. This
+      host is not a Windows edition CEE qualifies, whatever
+      ansible_os_product_type claimed.
+
+- name: Report the verified state
+  ansible.builtin.debug:
+    msg: >-
+      CEE active (service EMC Checker Server), listening on
+      {{ cee_http_port }}, logging to the Application event log
+      (sources "EMC CEE" and "CEE Monitor" — there is no log file on
+      Windows). Endpoints:
+      {% for e in cee_endpoints %}{{ e.name }}@http://{{ e.host }}:{{ e.port }}{% if not loop.last %}, {% endif %}{% endfor %}.
+      Next: run the two-stage event test in docs/powerstore-setup-runbook.md.
