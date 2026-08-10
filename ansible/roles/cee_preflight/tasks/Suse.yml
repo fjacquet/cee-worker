@@ -1,0 +1,6 @@
+---
+- name: Assert the platform is SUSE Linux Enterprise Server 15
+  ansible.builtin.include_tasks: assert_platform_Suse.yml
+
+- name: Run the Linux preflight checks
+  ansible.builtin.include_tasks: preflight_linux.yml
