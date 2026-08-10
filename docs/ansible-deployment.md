@@ -5,9 +5,15 @@ supports CEE on a RHEL or SLES VM or bare metal; the container in this
 repo is a lab sandbox only, RHEL-based, and not extended to SLES.
 
 Windows Server support is **phase 2 and not implemented**. The
-OS-family gate in `cee_preflight` accepts only `RedHat` and `Suse` and
-rejects Windows by name — see the Windows section below for what is
-already known.
+OS-family gate in `cee_preflight` accepts only `RedHat` and `Suse`, so a
+Windows host that reaches that gate is rejected by name — but in
+practice a Windows target does not reach it: `site.yml` sets
+`gather_facts: true`, and the `ansible.builtin.setup` fact-gathering
+module is a POSIX Python module that crashes against a Windows host
+before any task in this playbook runs, and `ansible/requirements.yml`
+carries no `ansible.windows` collection to fix that. Windows support is
+absent at the connection layer, not merely rejected once reached — see
+the Windows section below for what is already known.
 
 ## Prerequisites
 
@@ -73,12 +79,14 @@ Then seed the inventory and variables:
     cp ansible/group_vars/cee_linux.yml.example ansible/group_vars/cee_linux.yml
     cp ansible/group_vars/cee_windows.yml.example ansible/group_vars/cee_windows.yml
 
-Edit all four; `cee_windows.yml` only needs editing once the Windows
-branch lands, but the file must exist for `cee_preflight`'s
-required-variable gate. `cee_log_path` lives in the per-OS files
-(`cee_linux.yml` / `cee_windows.yml`), not in `all.yml` — put the host in
-the inventory's `cee_linux` or `cee_windows` child group and it picks up
-the matching file automatically.
+Edit the files that apply to your inventory. `cee_windows.yml` only
+needs editing once the Windows branch lands — a Linux-only operator does
+not need it at all: `group_vars/<group>.yml` for an inventory group with
+no hosts in it is never loaded, so an empty `cee_windows` group means the
+file is simply unused, not a gate that must be satisfied. `cee_log_path`
+lives in the per-OS files (`cee_linux.yml` / `cee_windows.yml`), not in
+`all.yml` — put the host in the inventory's `cee_linux` or `cee_windows`
+child group and it picks up the matching file automatically.
 
 In `group_vars/all.yml` the values that matter most:
 
@@ -98,8 +106,9 @@ In `group_vars/all.yml` the values that matter most:
   automated check and still receives nothing.
 
 Every variable in the example file is required. The roles ship no
-`defaults/main.yml`; `cee_preflight` asserts the full list up front rather
-than letting a missing value render a quietly wrong config.
+`defaults/main.yml`; `cee_common` asserts the full list up front, before
+`cee_preflight` or anything else touches the host, rather than letting a
+missing value render a quietly wrong config.
 
 All four files are gitignored; they hold site addresses.
 `hosts.yml.example` uses an ordinary login rather than `root` — every
@@ -107,8 +116,12 @@ role declares `become: true`, so sudo supplies privilege.
 
 ## SLES 15
 
-SLES 15 is a fully supported target, sharing every role with RHEL except
-`cee_preflight`'s platform gate and `cee_install`'s package-install step.
+SLES 15 support is implemented, sharing every role with RHEL except
+`cee_preflight`'s platform gate and `cee_install`'s package-install step
+— but it is **unproven**: SLES has only ever run through localhost gate
+tests and lint in CI, never against a real host. Treat it the same way
+`docs/acceptance-tests.md` treats RHEL: implemented and covered by
+automated checks, not yet demonstrated end to end.
 The only real difference: **SLES needs no repository setup at all.** The
 rpm's runtime dependencies — boost 1.88, openssl 3, libcurl 4 and
 jansson 4 — ship inside `/opt/CEEPack`; only glibc, `ld-linux` and a shell
@@ -129,11 +142,16 @@ Put a SLES host in the inventory's `cee_linux` group exactly as for RHEL;
 ## Windows Server — phase 2, not implemented
 
 Windows is a planned target, not a supported one. `cee_preflight`'s
-OS-family gate accepts only `['RedHat', 'Suse']` and rejects `Windows` by
-name with a message pointing at the plan document. No `win_*` module
-exists anywhere in this tree, `ansible/requirements.yml` deliberately does
-not pull in `ansible.windows`, and the `cee_windows` inventory group is
-expected to stay empty until the branch lands.
+OS-family gate accepts only `['RedHat', 'Suse']`, so a Windows host that
+reaches that task is rejected by name — but in this playbook a Windows
+host never gets that far: `site.yml` runs `gather_facts: true`, and
+`ansible.builtin.setup` is a POSIX Python module that fails against a
+Windows target before `assert_os_family.yml` runs, and no
+`ansible.windows` collection is pulled in to make that facts-gathering
+step work. In practice, Windows is unreachable at the connection layer,
+not merely turned away once reached. No `win_*` module exists anywhere in
+this tree, and the `cee_windows` inventory group is expected to stay
+empty until the branch lands.
 
 What is already known and documented, for when that branch starts:
 
@@ -144,14 +162,33 @@ What is already known and documented, for when that branch starts:
 - **No credential delegation** over this transport (unlike WinRM with
   CredSSP). Not expected to matter here: the installer is copied to the
   host before it runs, so nothing needs a second hop to a network share.
-- **Domain membership**: expect the target to be domain-joined, as is
-  typical for a Windows Server host reachable by SSH with a directory
+- **Domain membership is not required for the CEPA path.** The harvest
+  below was done on a standalone (`WORKGROUP`) host, not a domain-joined
+  one; nothing in the CEPA/Audit configuration flow needed a directory
   account.
-- `cee_log_path` for Windows is provisionally `C:\Program Files\EMC\CEE\logs\`
-  in `group_vars/cee_windows.yml.example` — unverified against a real
-  install. Registry keys, the installer's silent-install flags, its
-  ProductCode, and the true default log path are unknown and out of scope
-  for this document; they are the subject of a later task.
+- **Registry keys, silent-install flags, ProductCode, and the default
+  log path are no longer unknown** — `cee_windows.yml.example` provisionally
+  claimed a file-based log path, and that has since been harvested and
+  found false. `docs/superpowers/specs/2026-08-10-cee-windows-releve.md`
+  is the full record, run against a live CEE 9.2.0.0 and 9.3.0.0 install
+  on Windows Server 2025. Summary of what it found:
+  - The live configuration is a registry tree under
+    `HKLM:\SOFTWARE\EMC\CEE`, mirroring the Linux XML template's
+    `<Configuration>` and `<CEPP>` sections value-for-value (`HttpPort`,
+    `CacheSize`, `NumberOfThreads`, `Security\Http\ServerEnabled`, one
+    subtree per sub-facility, etc.).
+  - The silent-install command line that works:
+    `<installer>.exe /s /v"/qn /l*v <logfile>"`.
+  - ProductCode for 9.2.0.0: `{81F4A925-A885-4F58-8907-641BC7E82B99}`
+    (differs per version; always resolve `/x <GUID> /qn` from the
+    Uninstall registry key rather than hardcoding this).
+  - **There is no file-based log on Windows at all.** No `LogFile`
+    registry value exists anywhere under `HKLM:\SOFTWARE\EMC\CEE`, and no
+    `.log` files appear on disk after install or service start. CEE logs
+    exclusively to the Windows Application Event Log, under two sources:
+    `EMC CEE` and `CEE Monitor`. Phase 2's verification step for Windows
+    must query the Event Log (e.g. `Get-WinEvent`), not search for a log
+    file the way `cee_verify`'s Linux role does.
 
 ## Run
 
@@ -227,10 +264,13 @@ transaction usually means the host cannot reach `cdn-ubi.redhat.com` over
 HTTPS. Test with
 `curl -sI https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/repodata/repomd.xml`.
 
-**Nothing listening on 12228.** CEE 9.x ships
-`Security/Http/ServerEnabled=0`. The template sets it to `1`; confirm the
-rendered `/opt/CEEPack/emc_cee_config.xml` on the host actually has it,
-and that CEE read that file rather than a stale copy.
+**Nothing listening on 12228.** CEE **9.2.0.0** (the version vendored and
+deployed by this repo) ships `Security/Http/ServerEnabled=0`. The
+template sets it to `1`; confirm the rendered
+`/opt/CEEPack/emc_cee_config.xml` on the host actually has it, and that
+CEE read that file rather than a stale copy. (9.3.0.0 ships this default
+as `1` instead — if a future upgrade moves this repo to 9.3.0.0 or later,
+re-verify this claim before trusting it.)
 
 **Events are not arriving at any consumer.** If `cee_endpoints` has more
 than one entry, check the *first* one. CEE monitors the first endpoint in

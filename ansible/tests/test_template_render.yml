@@ -70,8 +70,9 @@
           - "'<HttpPort>12228</HttpPort>' in cee_xml"
           - cee_xml is search('<Http>\\s*<ServerEnabled>1</ServerEnabled>')
         fail_msg: >-
-          CEE 9.x ships Http/ServerEnabled=0. Without 1 here CEE never binds
-          a listener and fails silently.
+          CEE 9.2.0.0 ships Http/ServerEnabled=0 (9.3.0.0 ships it as 1;
+          this repo vendors and deploys 9.2.0.0). Without 1 here CEE never
+          binds a listener and fails silently.
 
     - name: Access list is enabled and populated
       ansible.builtin.assert:

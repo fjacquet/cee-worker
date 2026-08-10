@@ -46,10 +46,13 @@
     that:
       - cee_verify_listening is not failed
     fail_msg: >-
-      Nothing is listening on {{ cee_http_port }}. CEE 9.x ships
+      Nothing is listening on {{ cee_http_port }}. CEE 9.2.0.0 (the
+      version this repo vendors and deploys) ships
       Security/Http/ServerEnabled=0 by default; confirm the rendered
       /opt/CEEPack/emc_cee_config.xml has it set to 1 and that CEE actually
-      read that file.
+      read that file. (9.3.0.0 ships this default as 1 instead — if a
+      future upgrade moves this repo past 9.2.0.0, this is not the first
+      thing to check.)
 
 - name: Find the CEE log files
   ansible.builtin.find:
@@ -78,8 +81,10 @@
     that:
       - "'Platform is not supported' not in (cee_verify_log_content.content | b64decode)"
     fail_msg: >-
-      CEE reports an unsupported platform. /etc/redhat-release does not
-      contain the literal Red Hat string this host claimed to have.
+      CEE reports an unsupported platform. On RHEL, /etc/redhat-release
+      does not contain the literal Red Hat string this host claimed to
+      have; on SLES, /etc/os-release or /etc/SuSE-release does not
+      contain the genuine SUSE product string CEE expects.
 
 - name: Report the verified state
   ansible.builtin.debug:

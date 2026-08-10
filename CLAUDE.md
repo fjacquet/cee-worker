@@ -130,9 +130,11 @@ Match that when adding checks.
   verbatim, so `12228.5` or `"12228"` renders a URL CEE drops without
   logging. The integer check must run *before* the range check (Jinja's
   `int` filter does `int(float(v))` and would launder a fraction).
-- **CEE 9.x ships `Security/Http/ServerEnabled=0`.** The template sets it
-  to 1. "Nothing listening on 12228" almost always means CEE read a
-  different config file.
+- **CEE 9.2.0.0 ships `Security/Http/ServerEnabled=0`** (9.3.0.0 ships it
+  as `1` — confirmed by harvest on both Linux and Windows; this repo
+  vendors and deploys 9.2.0.0 only). The template sets it to 1. "Nothing
+  listening on 12228" almost always means CEE read a different config
+  file.
 - **Exactly one sub-facility, and it must be `audit`.** The template
   renders `<EndPoint>` only for Audit; any other choice yields
   `<Enabled>1</Enabled>` with an empty endpoint — starts, listens, logs,

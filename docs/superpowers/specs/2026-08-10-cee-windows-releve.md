@@ -246,13 +246,16 @@ same value names. Only four values differ:
 
 The `ServerEnabled` difference is the only one that matters for this
 repo. 9.2.0.0 (the version we vendor and deploy) ships
-`Security/Http/ServerEnabled=0` by default — confirming the constraint
-already documented in `CLAUDE.md` ("CEE 9.x ships
-`Security/Http/ServerEnabled=0`. The template sets it to 1.") is
-correct **for 9.2.0.0 on Windows too**, not just Linux. 9.3.0.0 appears
-to have changed that default to `1`. This repo only vendors and deploys
-9.2.0.0, so Phase 2 should assume `ServerEnabled=0` out of the box and
-must write `1` explicitly, same as the Linux XML template already does.
+`Security/Http/ServerEnabled=0` by default on Windows too, not just
+Linux — but the table above proves the "9.x" wording this document
+originally credited to `CLAUDE.md` is too broad: the default is `0` in
+9.2.0.0 and `1` in 9.3.0.0, so the claim only holds scoped to 9.2.0.0
+specifically (this branch's fix wave corrected `CLAUDE.md` and the other
+live docs to say "9.2.0.0", not "9.x", for exactly this reason). This
+repo only vendors and deploys 9.2.0.0, so Phase 2 should assume
+`ServerEnabled=0` out of the box and must write `1` explicitly, same as
+the Linux XML template already does — but should not assume that holds
+if a future upgrade moves past 9.2.0.0.
 
 ## Limitations
 

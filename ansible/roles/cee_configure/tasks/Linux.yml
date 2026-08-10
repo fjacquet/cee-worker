@@ -10,10 +10,11 @@
   become: true
   notify: Restart emc_cee
 
-# RHEL 9 ships firewalld enabled and only sshd/dhcpv6-client allowed, so a
-# stock host drops PowerStore's posts to 12228 while every check in
-# cee_verify — which probes 127.0.0.1, a path firewalld does not filter —
-# still passes. That combination is the worst kind of green run.
+# Both RHEL 9 and SLES 15 ship firewalld enabled with only ssh allowed, so
+# a stock host on either platform drops PowerStore's posts to 12228 while
+# every check in cee_verify — which probes 127.0.0.1, a path firewalld
+# does not filter — still passes. That combination is the worst kind of
+# green run, on either platform.
 - name: Open the CEE inbound port
   when: cee_manage_firewall | bool
   block:
