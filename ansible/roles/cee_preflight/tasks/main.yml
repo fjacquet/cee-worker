@@ -1,9 +1,4 @@
 ---
-# First task in the first role, on purpose: nothing else in this playbook
-# should run before the variables it depends on are known to exist.
-- name: Assert every required variable is defined
-  ansible.builtin.include_tasks: assert_required_vars.yml
-
 - name: Gather facts needed for the platform gate
   ansible.builtin.setup:
     gather_subset:

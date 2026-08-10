@@ -45,7 +45,7 @@
     - name: Expect the gate to fail
       block:
         - name: Assert required vars
-          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars.yml
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_required_vars.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "Preflight ran to completion with a firewall setting left out."
@@ -88,7 +88,7 @@
     - name: Expect the gate to fail
       block:
         - name: Assert required vars
-          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars.yml
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_required_vars.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "Preflight accepted a variable set with no publishing targets in it."
@@ -136,7 +136,7 @@
     - name: Expect the gate to fail
       block:
         - name: Assert required vars
-          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars.yml
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_required_vars.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "Preflight let cee_http_port 70000 through to firewalld."
@@ -179,4 +179,4 @@
     cee_verbose: 0
   tasks:
     - name: Assert required vars
-      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars.yml
+      ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_required_vars.yml

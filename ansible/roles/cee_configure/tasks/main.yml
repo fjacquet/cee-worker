@@ -1,10 +1,4 @@
 ---
-- name: Validate endpoints before touching the host
-  ansible.builtin.include_tasks: validate_endpoints.yml
-
-- name: Assert the sub-facility selection is one CEE will actually publish
-  ansible.builtin.include_tasks: assert_facilities.yml
-
 - name: Render the CEE configuration
   ansible.builtin.template:
     src: emc_cee_config.xml.j2

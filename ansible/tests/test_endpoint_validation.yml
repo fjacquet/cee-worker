@@ -31,7 +31,7 @@
     - name: Expect validation to fail
       block:
         - name: Validate
-          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/validate_endpoints.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "Validation did not reject 127.0.0.1."
@@ -55,7 +55,7 @@
     - name: Expect validation to fail
       block:
         - name: Validate
-          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/validate_endpoints.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "Validation did not reject the bare hostname 'cee-exporter'."
@@ -76,7 +76,7 @@
     - name: Expect validation to fail
       block:
         - name: Validate
-          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/validate_endpoints.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "An empty endpoint list was accepted; Audit would have nowhere to publish."
@@ -100,7 +100,7 @@
     - name: Expect validation to fail
       block:
         - name: Validate
-          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/validate_endpoints.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "Validation accepted port 0, which no listener can bind."
@@ -124,7 +124,7 @@
     - name: Expect validation to fail
       block:
         - name: Validate
-          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/validate_endpoints.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "Validation accepted port 65536, one past the top of the TCP port space."
@@ -148,7 +148,7 @@
     - name: Expect validation to fail
       block:
         - name: Validate
-          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/validate_endpoints.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: >-
@@ -173,4 +173,4 @@
         port: 12229
   tasks:
     - name: Validate
-      ansible.builtin.include_tasks: ../roles/cee_configure/tasks/validate_endpoints.yml
+      ansible.builtin.include_tasks: ../roles/cee_common/tasks/validate_endpoints.yml
