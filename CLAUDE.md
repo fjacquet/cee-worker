@@ -102,6 +102,23 @@ assertion here names the specific wrong thing rather than failing
 generically, and verification is a first-class role, not a postscript.
 Match that when adding checks.
 
+That signature turned out to be a misreading, and the correction is
+instructive. **CEE 9.2.0.0 writes no log file at all.** On Linux it logs
+to stdout, which systemd captures into the journal; on Windows it logs
+to the Application Event Log. Measured on RHEL 9.8 and SLES 15 SP7:
+`/opt/CEEPack/logs/` stays empty even with `Debug=1 Verbose=1`, and the
+process holds no log file descriptor. `<LogFile><Path>` is rendered into
+the config and ignored.
+
+So `cee_verify` reads `journalctl -u emc_cee`, anchored to the unit's own
+`ActiveEnterTimestamp` so a line from an earlier boot cannot fail a
+healthy run. It matches CEE's own `[EMC CEE]` prefix rather than testing
+that the journal is non-empty — systemd writes "Started CEE Service"
+whether or not the process ever speaks, so a non-empty test would pass
+against a CEE that started and went mute. The empty directory was never
+the failure signature; it was always the normal state, and the two checks
+that read it could not pass on any real host.
+
 ## Constraints that bite
 
 - **Genuine Red Hat or genuine SUSE only.** Both builds read

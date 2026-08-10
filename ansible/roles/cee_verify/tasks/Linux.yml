@@ -17,9 +17,10 @@
     that:
       - cee_verify_unit.status.ActiveState == 'active'
     fail_msg: >-
-      emc_cee is {{ cee_verify_unit.status.ActiveState }}, not active. Check
-      `journalctl -u emc_cee -n 50` and the CEE log under
-      {{ cee_log_path }}.
+      emc_cee is {{ cee_verify_unit.status.ActiveState }}, not active.
+      Check `journalctl -u emc_cee -n 50` — that is where CEE's own
+      output goes on Linux, not {{ cee_log_path }}, which this version
+      renders into its config and then ignores.
 
 - name: CEE must be listening on its inbound port
   ansible.builtin.wait_for:
@@ -54,42 +55,67 @@
       future upgrade moves this repo past 9.2.0.0, this is not the first
       thing to check.)
 
-- name: Find the CEE log files
-  ansible.builtin.find:
-    paths: "{{ cee_log_path }}"
-    patterns: "*.log"
-  register: cee_verify_logs
+- name: Read CEE's own output from the journal
+  # CEE 9.2.0.0 writes no log file on Linux. Measured on RHEL 9.8 and
+  # SLES 15 SP7: /opt/CEEPack/logs/ stays empty even with Debug=1 and
+  # Verbose=1, the running process holds no log file descriptor, and the
+  # whole startup banner arrives on stdout — which systemd captures into
+  # the journal. <LogFile><Path> is rendered into emc_cee_config.xml and
+  # ignored by this version. Windows is the same shape: Application
+  # Event Log, no flat file.
+  #
+  # These two checks used to read files under cee_log_path. They could
+  # not pass on any real host, and the second one — the unsupported
+  # platform check — never inspected anything at all, because the first
+  # aborted the play before it ran.
+  #
+  # --since is anchored to this unit's own last start, taken from the
+  # query above rather than a second systemctl call. Without that anchor
+  # a "Platform is not supported" line from an earlier boot would fail a
+  # healthy deployment forever.
+  ansible.builtin.command:
+    argv:
+      - journalctl
+      - --unit=emc_cee
+      - --no-pager
+      - --output=cat
+      - --since={{ cee_verify_unit.status.ActiveEnterTimestamp }}
+  register: cee_verify_journal
+  changed_when: false
   become: true
 
-- name: CEE must have written a log
+- name: CEE itself must have logged, not just systemd
+  # Deliberately matches CEE's own '[EMC CEE]' prefix rather than testing
+  # that the journal is non-empty. systemd writes "Started CEE Service"
+  # whether or not the process ever says a word, so a non-empty test
+  # would pass against a CEE that started and immediately went mute —
+  # which is the exact failure class this role exists to catch.
   ansible.builtin.assert:
     that:
-      - cee_verify_logs.files | length > 0
+      - "'[EMC CEE]' in cee_verify_journal.stdout"
     fail_msg: >-
-      No log files under {{ cee_log_path }}. CEE did not start, or
-      LogFile/Path in the rendered config does not match. An empty log
-      directory was exactly the container's failure signature.
+      emc_cee is running but has written nothing of its own to the
+      journal since it started
+      ({{ cee_verify_unit.status.ActiveEnterTimestamp }}). systemd may
+      still report the unit as active while the process is mute. Read
+      `journalctl -u emc_cee -n 50` on the host: a healthy start prints a
+      banner beginning "[EMC CEE]: CEE Version".
 
-- name: Read the CEE log
-  ansible.builtin.slurp:
-    src: "{{ (cee_verify_logs.files | sort(attribute='mtime') | last).path }}"
-  register: cee_verify_log_content
-  become: true
-
-- name: Log must not report an unsupported platform
+- name: The journal must not report an unsupported platform
   ansible.builtin.assert:
     that:
-      - "'Platform is not supported' not in (cee_verify_log_content.content | b64decode)"
+      - "'Platform is not supported' not in cee_verify_journal.stdout"
     fail_msg: >-
-      CEE reports an unsupported platform. On RHEL, /etc/redhat-release
-      does not contain the literal Red Hat string this host claimed to
-      have; on SLES, /etc/os-release or /etc/SuSE-release does not
-      contain the genuine SUSE product string CEE expects.
+      CEE reports an unsupported platform and will self-terminate. On
+      RHEL, /etc/redhat-release does not contain the literal Red Hat
+      string this host claimed to have; on SLES, /etc/os-release or
+      /etc/SuSE-release does not contain the genuine SUSE product string
+      CEE expects.
 
 - name: Report the verified state
   ansible.builtin.debug:
     msg: >-
-      CEE active, listening on {{ cee_http_port }}, logging to
-      {{ cee_log_path }}. Endpoints:
+      CEE active, listening on {{ cee_http_port }}, logging to the
+      journal (`journalctl -u emc_cee`). Endpoints:
       {% for e in cee_endpoints %}{{ e.name }}@http://{{ e.host }}:{{ e.port }}{% if not loop.last %}, {% endif %}{% endfor %}.
       Next: run the two-stage event test in docs/powerstore-setup-runbook.md.
