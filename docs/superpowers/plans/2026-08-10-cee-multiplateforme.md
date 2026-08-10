@@ -837,11 +837,23 @@ Both negative cases mutation-tested."
 
 **Files:**
 - Create: `ansible/roles/cee_install/tasks/Suse.yml`
+- Create: `ansible/roles/cee_install/tasks/install_linux_locate.yml`
+- Create: `ansible/roles/cee_install/tasks/install_linux_verify.yml`
+- Modify: `ansible/roles/cee_install/tasks/RedHat.yml`
 - Modify: `ansible/requirements.yml`
 
 **Interfaces:**
 - Consumes: la convention de dispatch de la Task 2, le gate de la Task 3.
 - Produces: `cee_install/tasks/Suse.yml`, qui laisse le même état sur disque que `RedHat.yml` — `/opt/CEEPack` peuplé, `emc_cee.service` en place, `{{ cee_log_path }}` créé et détenu par `ceesvc`.
+- Produces: deux fichiers partagés par les deux branches Linux. Contrat :
+  - `install_linux_locate.yml` **consomme** la variable `cee_install_rpm_glob` (nom de fichier avec joker, sans chemin) que l'appelant doit définir avant de l'inclure, et **produit** `cee_install_rpm_local` (chemin côté contrôleur) ainsi que le rpm copié dans `/tmp/` sur la cible.
+  - `install_linux_verify.yml` **consomme** `cee_install_rpm_local` et `cee_log_path`. Aucune sortie.
+
+**Note de factorisation** — décidée avant exécution, en écart avec la rédaction initiale de cette tâche.
+
+Les deux branches Linux ne diffèrent réellement que par deux choses : le motif de glob et le module de paquet. Tout le reste — localiser, exiger exactement un rpm, copier, nettoyer le rpm intermédiaire, vérifier le layout, créer le répertoire de log — est identique, parce que les deux rpm livrent un layout identique (fait mesuré, cf. spec).
+
+D'où deux fichiers partagés, sur le même modèle que `preflight_linux.yml` de la Task 2. La duplication n'est pas factorée en Task 2 parce qu'elle n'existe pas encore à ce moment-là : elle l'est ici, quand le second consommateur arrive.
 
 - [ ] **Step 1 : Déclarer `community.general`**
 
@@ -873,40 +885,39 @@ ansible-doc -M community.general zypper >/dev/null && echo OK
 
 Attendu : `OK`.
 
-- [ ] **Step 3 : Écrire la branche SLES**
+- [ ] **Step 3 : Extraire la partie « localiser et copier », partagée**
 
-Créer `ansible/roles/cee_install/tasks/Suse.yml` :
+Créer `ansible/roles/cee_install/tasks/install_linux_locate.yml`, en y déplaçant les quatre premières tâches de `RedHat.yml` (de `Locate the bundled CEE rpm` à `Copy the CEE rpm to the target`), avec le glob paramétré :
 
 ```yaml
 ---
-# SLES branch. Deliberately shorter than RedHat.yml, and the difference is
-# not an oversight.
+# Locate the vendored rpm on the controller and stage it on the target.
+# Shared by the RHEL and SLES branches, which differ only in which rpm
+# they are looking for.
 #
-# There is no repository setup here. The RHEL branch installs ubi.repo and
-# enables it for one transaction because a minimal RHEL host may lack the
-# dependencies dnf needs to resolve. The SLES rpm needs nothing of the
-# sort: boost 1.88, openssl 3, libcurl 4 and jansson 4 all ship inside
-# /opt/CEEPack, so the external dependency surface is glibc, ld-linux and
-# a shell — present on any SLES 15 install. Verified by comparing the
-# declared requires of both rpms: identical bar /bin/bash against
-# /usr/bin/bash.
+# Consumes cee_install_rpm_glob — a filename pattern with no path, set by
+# the caller immediately before including this file.
+# Produces cee_install_rpm_local, and leaves the rpm in /tmp/ on the
+# target for the caller's package module to install.
+#
+# Every supported glob ends in .x86_64.rpm, so the i386 build that Dell
+# also ships cannot match and no explicit exclusion is needed.
 
 - name: Locate the bundled CEE rpm
-  # The glob ends in .x86_64.rpm, so the i386 build that Dell also ships
-  # cannot match it and no explicit exclusion is needed.
   ansible.builtin.set_fact:
     cee_install_rpm_candidates: >-
       {{ query('ansible.builtin.fileglob',
-               playbook_dir + '/../bin/emc_cee_SLES-*.x86_64.rpm') }}
+               playbook_dir + '/../bin/' + cee_install_rpm_glob) }}
 
 - name: Exactly one CEE rpm must be present in bin/
   ansible.builtin.assert:
     that:
       - cee_install_rpm_candidates | length == 1
     fail_msg: >-
-      Expected exactly one emc_cee_SLES-*.x86_64.rpm in bin/, found
+      Expected exactly one {{ cee_install_rpm_glob }} in bin/, found
       {{ cee_install_rpm_candidates | length }}. Remove the old rpm before
-      adding a new one.
+      adding a new one — the Dockerfile globs the same directory and has
+      the same requirement.
 
 - name: Record the rpm path
   ansible.builtin.set_fact:
@@ -920,23 +931,22 @@ Créer `ansible/roles/cee_install/tasks/Suse.yml` :
     group: root
     mode: "0644"
   become: true
+```
 
-- name: Install CEE
-  # Deliberately no disable_gpg_check, for the same reason the RHEL branch
-  # avoids it: the option is transaction-wide, so it would also suppress
-  # verification of anything zypper pulls in alongside the local rpm.
-  #
-  # The rpm IS signed (RSA/SHA256, fingerprint
-  # F85417992FA59E0A84F1E2CCF4A476D807DD4467) but Dell distributes the
-  # signing key only through their authenticated support portal, so it
-  # cannot be vendored here. zypper will warn about the unknown key and
-  # proceed for a local package file; repo-sourced packages keep their
-  # normal verification.
-  community.general.zypper:
-    name: /tmp/{{ cee_install_rpm_local | basename }}
-    state: present
-  become: true
-  notify: Restart emc_cee
+- [ ] **Step 4 : Extraire la partie post-installation, partagée**
+
+Créer `ansible/roles/cee_install/tasks/install_linux_verify.yml`, en y déplaçant les quatre dernières tâches de `RedHat.yml`, inchangées (de `Remove the staged rpm` à la création du répertoire de log) :
+
+```yaml
+---
+# Post-install cleanup and layout check, shared by the RHEL and SLES
+# branches. Both rpms ship an identical payload — same /opt/CEEPack, same
+# unit file — so there is nothing to branch on here.
+#
+# Consumes cee_install_rpm_local and cee_log_path.
+#
+# The staged-rpm removal lives here rather than in the locate file because
+# it can only run once the package module has consumed the file.
 
 - name: Remove the staged rpm
   ansible.builtin.file:
@@ -977,7 +987,94 @@ Créer `ansible/roles/cee_install/tasks/Suse.yml` :
   become: true
 ```
 
-- [ ] **Step 4 : Suite, lint, syntax check**
+- [ ] **Step 5 : Réduire `RedHat.yml` à ce qui lui est propre**
+
+Après extraction, `ansible/roles/cee_install/tasks/RedHat.yml` conserve **uniquement** le bloc `ubi.repo`, la déclaration du glob, les deux includes et la tâche `dnf`. Le long commentaire justifiant l'absence de `disable_gpg_check` reste attaché à la tâche `dnf`, inchangé — il parle de `--nogpgcheck` et des dépôts UBI, tous deux spécifiques à cette branche.
+
+```yaml
+---
+- name: Install UBI 9 repositories, disabled by default
+  # The repo definitions land on the host permanently but ship
+  # `enabled = 0`; the dnf task below switches them on for its own
+  # transaction with `enablerepo`. See files/ubi.repo for why.
+  ansible.builtin.copy:
+    src: ubi.repo
+    dest: /etc/yum.repos.d/ubi.repo
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+
+- name: Look for the RHEL build of the rpm
+  ansible.builtin.set_fact:
+    cee_install_rpm_glob: emc_cee_RHEL-*.x86_64.rpm
+
+- name: Locate and stage the rpm
+  ansible.builtin.include_tasks: install_linux_locate.yml
+
+- name: Install CEE
+  # <<< the existing disable_gpg_check / enablerepo comment block, moved
+  # here verbatim from the pre-refactor file >>>
+  ansible.builtin.dnf:
+    name: /tmp/{{ cee_install_rpm_local | basename }}
+    state: present
+    enablerepo:
+      - ubi-9-baseos-rpms
+      - ubi-9-appstream-rpms
+  become: true
+  notify: Restart emc_cee
+
+- name: Verify the installed layout
+  ansible.builtin.include_tasks: install_linux_verify.yml
+```
+
+- [ ] **Step 6 : Écrire la branche SLES**
+
+Créer `ansible/roles/cee_install/tasks/Suse.yml` :
+
+```yaml
+---
+# SLES branch. Deliberately shorter than RedHat.yml, and the difference is
+# not an oversight.
+#
+# There is no repository setup here. The RHEL branch installs ubi.repo and
+# enables it for one transaction because a minimal RHEL host may lack the
+# dependencies dnf needs to resolve. The SLES rpm needs nothing of the
+# sort: boost 1.88, openssl 3, libcurl 4 and jansson 4 all ship inside
+# /opt/CEEPack, so the external dependency surface is glibc, ld-linux and
+# a shell — present on any SLES 15 install. Verified by comparing the
+# declared requires of both rpms: identical bar /bin/bash against
+# /usr/bin/bash.
+
+- name: Look for the SLES build of the rpm
+  ansible.builtin.set_fact:
+    cee_install_rpm_glob: emc_cee_SLES-*.x86_64.rpm
+
+- name: Locate and stage the rpm
+  ansible.builtin.include_tasks: install_linux_locate.yml
+
+- name: Install CEE
+  # Deliberately no disable_gpg_check, for the same reason the RHEL branch
+  # avoids it: the option is transaction-wide, so it would also suppress
+  # verification of anything zypper pulls in alongside the local rpm.
+  #
+  # The rpm IS signed (RSA/SHA256, fingerprint
+  # F85417992FA59E0A84F1E2CCF4A476D807DD4467) but Dell distributes the
+  # signing key only through their authenticated support portal, so it
+  # cannot be vendored here. zypper will warn about the unknown key and
+  # proceed for a local package file; repo-sourced packages keep their
+  # normal verification.
+  community.general.zypper:
+    name: /tmp/{{ cee_install_rpm_local | basename }}
+    state: present
+  become: true
+  notify: Restart emc_cee
+
+- name: Verify the installed layout
+  ansible.builtin.include_tasks: install_linux_verify.yml
+```
+
+- [ ] **Step 7 : Suite, lint, syntax check**
 
 ```bash
 ansible/tests/run.sh
@@ -988,10 +1085,21 @@ ansible-lint ansible/
 
 Attendu : propre partout. La branche SLES n'est pas exécutée par les tests localhost — ils n'exercent que les gates — mais `--syntax-check` et `ansible-lint` la parcourent, ce qui attrape un module mal nommé ou un YAML invalide.
 
-- [ ] **Step 5 : Commit**
+Contrôle supplémentaire : la refactorisation de `RedHat.yml` ne doit rien avoir changé pour RHEL. Comparer l'ordre des tâches avant/après :
 
 ```bash
-git add ansible/roles/cee_install/tasks/Suse.yml ansible/requirements.yml
+git show HEAD:ansible/roles/cee_install/tasks/RedHat.yml | grep '^- name:'
+grep -h '^- name:' ansible/roles/cee_install/tasks/RedHat.yml \
+                   ansible/roles/cee_install/tasks/install_linux_locate.yml \
+                   ansible/roles/cee_install/tasks/install_linux_verify.yml
+```
+
+Les mêmes tâches doivent apparaître, dans le même ordre effectif : repos, locate, assert, record, copy, install, remove, stat, assert layout, log dir.
+
+- [ ] **Step 8 : Commit**
+
+```bash
+git add ansible/roles/cee_install/tasks ansible/requirements.yml
 git commit -m "feat(ansible): install CEE on SLES 15 via zypper
 
 No repository setup, unlike the RHEL branch: the rpm ships boost,
@@ -999,7 +1107,13 @@ openssl, curl and jansson inside /opt/CEEPack, leaving glibc and a shell
 as the only external dependencies. Verified by comparing the declared
 requires of both rpms — identical bar /bin/bash vs /usr/bin/bash.
 
-The glob ends in .x86_64.rpm, so Dell's i386 build cannot match it."
+The two branches differ only in the glob and the package module, so
+locating, staging, cleanup and the layout check move into shared task
+files. Factored here rather than when RedHat.yml was created, because
+this is where the second consumer appears.
+
+Every supported glob ends in .x86_64.rpm, so Dell's i386 build cannot
+match it and needs no explicit exclusion."
 ```
 
 ---
