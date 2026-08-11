@@ -10,6 +10,8 @@ Dell CEE build and the useful version to know is CEE's own.
 
 ## [Unreleased]
 
+## [9.2.0.2] - 2026-08-11
+
 ### Added
 
 - Windows Server as a supported Ansible target: `cee_preflight`,
