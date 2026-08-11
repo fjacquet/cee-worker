@@ -93,6 +93,15 @@ services:
     volumes:
       - ../pstore_exporter/grafana/provisioning:/etc/grafana/provisioning:ro
       - ../pstore_exporter/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      # foldersFromFilesStructure is on in the mounted provisioning config,
+      # so this becomes its own "cee-exporter" folder in Grafana without
+      # touching pstore_exporter's provisioning at all.
+      - ../cee-exporter/dashboards:/var/lib/grafana/dashboards/cee-exporter:ro
+      # The cee-exporter dashboard's panels expect datasource uid
+      # cee-prometheus; pstore_exporter's provisioning only registers uid
+      # prometheus. Same Prometheus instance, registered under the extra
+      # uid, so the dashboard works unmodified.
+      - ./grafana/cee-datasource.yml:/etc/grafana/provisioning/datasources/cee-datasource.yml:ro
     depends_on:
       - prometheus
     restart: unless-stopped

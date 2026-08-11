@@ -1,0 +1,16 @@
+# Second Prometheus datasource, uid cee-prometheus, matching what the
+# upstream cee-exporter/dashboards/cee-exporter.json panels expect.
+# Same Prometheus instance as pstore_exporter's "Prometheus" datasource
+# (uid: prometheus) — just registered under the uid this dashboard needs,
+# so the dashboard works unmodified from the cee-exporter repo.
+apiVersion: 1
+
+datasources:
+  - name: cee-prometheus
+    uid: cee-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    editable: false
+    jsonData:
+      timeInterval: 15s
