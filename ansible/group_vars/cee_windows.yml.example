@@ -1,0 +1,58 @@
+---
+# Copy to cee_windows.yml. Applies to every host in the cee_windows group.
+#
+# Windows Server support is implemented. cee_preflight's OS-family gate
+# accepts 'Windows' and its platform gate requires a server edition
+# (ansible_os_product_type == 'server'; client editions are rejected by
+# name). A single ansible-playbook site.yml run has completed with
+# failed=0 against a real Windows Server 2025 Datacenter host, in the
+# same play as RHEL and SLES hosts. Two things that run has NOT proven:
+# the host was WORKGROUP, not domain-joined, so nothing domain-dependent
+# is validated; and its inbound port was never opened, so the network
+# path from PowerStore's side is unverified. See
+# docs/ansible-deployment.md's Windows section for the full picture.
+
+# Ansible reaches Windows Server over OpenSSH here, not WinRM. The SSH
+# server's DefaultShell must be PowerShell for ansible_shell_type below to
+# match; if it is left as cmd, set ansible_shell_type: cmd instead.
+#
+# Note there is no credential delegation over this transport, unlike
+# WinRM with CredSSP. It does not matter for this deployment: the
+# installer is copied to the host before it runs, so nothing needs a
+# second hop to a network share.
+ansible_connection: ssh
+ansible_shell_type: powershell
+
+# CEE has NO file-based log on Windows. Confirmed by harvest against a
+# live CEE 9.2.0.0 (and 9.3.0.0) install on Windows Server 2025: no
+# LogFile registry value exists anywhere under HKLM:\SOFTWARE\EMC\CEE,
+# and no .log files ever appear on disk. CEE logs exclusively to the
+# Windows Application Event Log, under two sources: "EMC CEE" and
+# "CEE Monitor". See
+# docs/superpowers/specs/2026-08-10-cee-windows-releve.md for the full
+# harvest.
+#
+# cee_verify's Windows branch confirms health by querying the Event Log
+# (Get-WinEvent -LogName Application -ProviderName 'EMC CEE') rather than
+# by finding log files the way the Linux role does. There is no
+# cee_log_path variable for Windows — it is asserted Linux-only, in
+# cee_preflight/tasks/assert_required_vars_linux.yml, not by the shared
+# cee_common gate. Do not add it here.
+#
+# The service that owns the CEPA listener on 12228 is "EMC Checker
+# Server" (display name "EMC CAVA", binary CAVA.exe) — measured on the
+# live host, not "EMC CEE Monitor" (CEEMtrSvc.exe) despite the latter's
+# name. cee_configure and cee_verify drive EMC Checker Server
+# deliberately.
+
+# SSH multiplexing is disabled for Windows hosts on purpose. It works for
+# one-off interactive commands, but Ansible drives dozens of PowerShell
+# module calls back to back over one connection and the shared
+# ControlMaster channel wedges partway through — the symptom is
+# "Data could not be sent to remote host ... #< CLIXML" mid-play, reported
+# as unreachable rather than as a task failure. Observed against Windows
+# Server 2025 with DefaultShell = pwsh.
+#
+# This overrides whatever ControlMaster setting the operator's
+# ~/.ssh/config carries, so their interactive sessions keep multiplexing.
+ansible_ssh_common_args: '-o ControlMaster=no -o ControlPath=none'

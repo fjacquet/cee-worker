@@ -1,0 +1,20 @@
+---
+# Restart body for the Windows branch, reached from the "Restart emc_cee"
+# handler rather than living in handlers/main.yml directly.
+#
+# The indirection is not decoration. ansible-lint resolves
+# ansible.windows.* modules inside a tasks file but not inside a handlers
+# file — `--syntax-check site.yml` accepts the direct form, so it works at
+# runtime, but the linter reports couldn't-resolve on an unskippable rule
+# and CI would go red. Delegating to a tasks file keeps both happy without
+# a suppression.
+#
+# EMC Checker Server (display name "EMC CAVA", binary CAVA.exe) is the
+# service that owns the CEPA HTTP listener — measured, not inferred from
+# the names. EMC CEE Monitor is not a substitute: restarting it would
+# leave a configuration change unapplied while reporting success.
+
+- name: Restart the CEE service
+  ansible.windows.win_service:
+    name: EMC Checker Server
+    state: restarted

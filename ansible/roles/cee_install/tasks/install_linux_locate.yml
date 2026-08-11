@@ -1,0 +1,64 @@
+---
+# Locate the vendored rpm on the controller and stage it on the target.
+# Shared by the RHEL and SLES branches, which differ only in which rpm
+# they are looking for.
+#
+# Consumes cee_install_rpm_glob — a filename pattern with no path, set by
+# the caller immediately before including this file.
+# Produces cee_install_rpm_local, and leaves the rpm in /tmp/ on the
+# target for the caller's package module to install.
+#
+# Every supported glob ends in .x86_64.rpm, so the i386 build that Dell
+# also ships cannot match and no explicit exclusion is needed.
+
+- name: Locate the bundled CEE rpm
+  ansible.builtin.set_fact:
+    cee_install_rpm_candidates: >-
+      {{ query('ansible.builtin.fileglob',
+               playbook_dir + '/../bin/' + cee_install_rpm_glob) }}
+
+- name: Exactly one CEE rpm must be present in bin/
+  ansible.builtin.assert:
+    that:
+      - cee_install_rpm_candidates | length == 1
+    fail_msg: >-
+      Expected exactly one {{ cee_install_rpm_glob }} in bin/, found
+      {{ cee_install_rpm_candidates | length }}. Remove the old rpm before
+      adding a new one — the Dockerfile globs the same directory and has
+      the same requirement.
+
+- name: Record the rpm path
+  ansible.builtin.set_fact:
+    cee_install_rpm_local: "{{ cee_install_rpm_candidates[0] }}"
+
+# bin/*.rpm is Git LFS-tracked (.gitattributes). Without `git lfs install`
+# + `git lfs pull` on the controller, this "rpm" is actually a ~130-byte
+# text pointer, not the ~4 MB real package. The uniqueness assert above
+# passes either way — it only counts files, it doesn't look inside them
+# — so a pointer sails through undetected and gets handed to dnf/zypper,
+# which then fails confusingly (or, worse, on SLES, an rpm that doesn't
+# exist as the vendored blob RHEL's ships as, plainly fails to install).
+- name: Confirm the rpm on the controller is a real file, not an LFS pointer
+  ansible.builtin.stat:
+    path: "{{ cee_install_rpm_local }}"
+  register: cee_install_rpm_stat
+  delegate_to: localhost
+
+- name: The vendored rpm must not be an unpulled Git LFS pointer
+  ansible.builtin.assert:
+    that:
+      - cee_install_rpm_stat.stat.size > 1048576
+    fail_msg: >-
+      {{ cee_install_rpm_local }} is only {{ cee_install_rpm_stat.stat.size }}
+      bytes — that is a Git LFS pointer, not the real rpm (a real CEE rpm
+      is several MB). Run `git lfs install && git lfs pull` on the
+      controller, then re-run the playbook.
+
+- name: Copy the CEE rpm to the target
+  ansible.builtin.copy:
+    src: "{{ cee_install_rpm_local }}"
+    dest: /tmp/{{ cee_install_rpm_local | basename }}
+    owner: root
+    group: root
+    mode: "0644"
+  become: true

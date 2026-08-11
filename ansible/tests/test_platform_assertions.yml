@@ -10,7 +10,7 @@
     - name: Expect the platform gate to fail
       block:
         - name: Assert platform
-          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform.yml
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_RedHat.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "Validation did not reject the Rocky distribution."
@@ -32,7 +32,7 @@
     - name: Expect the platform gate to fail
       block:
         - name: Assert platform
-          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform.yml
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_RedHat.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "Validation did not reject major version 8."
@@ -52,4 +52,92 @@
     ansible_distribution_major_version: "9"
   tasks:
     - name: Assert platform
-      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform.yml
+      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_RedHat.yml
+
+- name: openSUSE Leap is rejected  # noqa: name[casing] (openSUSE is a proper noun)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_distribution: openSUSE Leap
+    ansible_distribution_major_version: "15"
+  tasks:
+    - name: Expect the platform gate to fail
+      block:
+        - name: Assert platform
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_Suse.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation did not reject openSUSE Leap."
+      rescue:
+        - name: Confirm it failed for the distribution reason
+          ansible.builtin.assert:
+            that:
+              - "'/etc/os-release' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the enterprise-SLES message."
+
+- name: SLES 12 is rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_distribution: SLES
+    ansible_distribution_major_version: "12"
+  tasks:
+    - name: Expect the platform gate to fail
+      block:
+        - name: Assert platform
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_Suse.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation did not reject SLES major version 12."
+      rescue:
+        - name: Confirm it failed for the version reason
+          ansible.builtin.assert:
+            that:
+              - "'requires SLES 15' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the major-version message."
+
+- name: SLES 15 passes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_distribution: SLES
+    ansible_distribution_major_version: "15"
+  tasks:
+    - name: Assert platform
+      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_Suse.yml
+
+- name: A Windows client edition is rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_distribution: Microsoft Windows 11 Pro
+    ansible_os_product_type: workstation
+  tasks:
+    - name: Expect the platform gate to fail
+      block:
+        - name: Assert platform
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_Windows.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation did not reject a Windows client edition."
+      rescue:
+        - name: Confirm it failed for the server-edition reason
+          ansible.builtin.assert:
+            that:
+              - "'server-side service' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the Windows Server edition message."
+
+- name: Windows Server passes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_distribution: Microsoft Windows Server 2025 Datacenter
+    ansible_os_product_type: server
+  tasks:
+    - name: Assert platform
+      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_platform_Windows.yml

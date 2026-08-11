@@ -1,0 +1,6 @@
+---
+- name: Assert the platform is genuine RHEL 9
+  ansible.builtin.include_tasks: assert_platform_RedHat.yml
+
+- name: Run the Linux preflight checks
+  ansible.builtin.include_tasks: preflight_linux.yml

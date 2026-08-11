@@ -1,28 +1,46 @@
 # cee-worker
 
-Dell Common Event Enabler (CEE) 9.2.0.0 — deployed to RHEL 9 with Ansible
-for PowerStore-facing use, and packaged as a container for local
-experimentation. The rpm shipped in `bin/` is CEE **9.2.0.0**.
+[![Ansible](https://github.com/fjacquet/cee-worker/actions/workflows/ansible.yml/badge.svg)](https://github.com/fjacquet/cee-worker/actions/workflows/ansible.yml)
+[![Publish](https://github.com/fjacquet/cee-worker/actions/workflows/publish.yml/badge.svg)](https://github.com/fjacquet/cee-worker/actions/workflows/publish.yml)
+[![Release](https://img.shields.io/github/v/tag/fjacquet/cee-worker?label=release&sort=semver)](https://github.com/fjacquet/cee-worker/tags)
+[![CEE](https://img.shields.io/badge/CEE-9.2.0.0-blue)](https://www.dell.com/support/product-details/en-us/product/common-event-enabler)
+[![Platforms](https://img.shields.io/badge/platforms-RHEL%209%20%7C%20SLES%2015%20%7C%20Windows%20Server-informational)](docs/ansible-deployment.md)
+
+Dell Common Event Enabler (CEE) 9.2.0.0 — deployed to RHEL 9, SLES 15 or
+Windows Server with Ansible for PowerStore-facing use, and packaged as a
+container (RHEL-based only) for local experimentation. The rpm/exe
+shipped in `bin/` is CEE **9.2.0.0**.
 
 ## Prerequisites
 
 - PowerStoreOS 4.1 or later
 - CEE 9.2 minimum
-- A genuine RHEL 9.x host. RHEL-compatible rebuilds are rejected: CEE
-  reads `/etc/redhat-release` and self-terminates unless it sees the
-  literal Red Hat string.
+- A genuine RHEL 9.x, SLES 15, or Windows **Server** host. RHEL-compatible
+  rebuilds, openSUSE, and Windows client editions are rejected: CEE reads
+  the platform release files (or, on Windows, requires a server product
+  type) and self-terminates unless it sees the right string.
+- **Git LFS**: `bin/*.rpm` and `bin/*.exe` are tracked with Git LFS (see
+  `.gitattributes`). Run `git lfs install && git lfs pull` after cloning.
+  Without it, the SLES rpm (a plain blob is unaffected on RHEL) is a
+  ~130-byte pointer file, not the real package — see
+  `docs/ansible-deployment.md` for what that breaks.
 - Time synchronised across the PowerStore array, the CEE host, and the
   consumer host
 - SMB configured on PowerStore (NFS optional)
 - TCP 12228 reachable between PowerStore and the CEE host
 
-## Path 1: Ansible on RHEL 9 (supported)
+## Path 1: Ansible on RHEL 9, SLES 15 or Windows Server (supported)
 
-Dell supports CEE on a RHEL VM or bare metal, so this is the path for
-anything PowerStore-facing.
+Dell supports CEE on RHEL, SLES or Windows Server, so this is the path
+for anything PowerStore-facing. All three platforms are implemented and
+have each run install, configuration and verification against a real
+host — a single `ansible-playbook site.yml` completes with `failed=0`
+across RHEL 9.8, SLES 15 SP7 and Windows Server 2025 Datacenter hosts in
+one play. No PowerStore array has been in that loop on any platform —
+see `docs/ansible-deployment.md` for exactly what is and is not proven.
 
 See `docs/ansible-deployment.md` for prerequisites, setup, and the
-four-role playbook, and `docs/powerstore-setup-runbook.md` for configuring
+five-role playbook, and `docs/powerstore-setup-runbook.md` for configuring
 the PowerStore side and verifying the event path end to end.
 
 ## Path 2: Container (lab sandbox, unsupported by Dell)
@@ -56,9 +74,11 @@ No rebuild needed for config-only changes.
 
 > **Version note:** docs/cee-8-x-linux-guide_en-us.pdf covers the CEE 8.x
 > line, but the rpm shipped here is CEE 9.2.0.0. Config semantics changed
-> between the two lines — notably, 9.x introduced "secure defaults" where
-> the HTTP server (`Security/Http/ServerEnabled`) is off unless explicitly
-> enabled, which the 8.x guide's example config doesn't mention. Treat the
+> between the two lines — notably, 9.2.0.0 introduced "secure defaults"
+> where the HTTP server (`Security/Http/ServerEnabled`) is off unless
+> explicitly enabled (9.3.0.0 flips this default back to on — this repo
+> vendors and deploys 9.2.0.0 only), which the 8.x guide's example config
+> doesn't mention. Treat the
 > 8.x guide as a general reference and cross-check anything config- or
 > security-related against the 9.x release notes/guide if available,
 > rather than assuming 8.x instructions apply verbatim.

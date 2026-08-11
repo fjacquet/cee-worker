@@ -1,0 +1,59 @@
+---
+# SLES branch. Deliberately shorter than RedHat.yml, and the difference is
+# not an oversight.
+#
+# There is no repository setup here. The RHEL branch installs ubi.repo and
+# enables it for one transaction because a minimal RHEL host may lack the
+# dependencies dnf needs to resolve. The SLES rpm needs nothing of the
+# sort: boost 1.88, openssl 3, libcurl 4 and jansson 4 all ship inside
+# /opt/CEEPack, so the external dependency surface is glibc, ld-linux and
+# a shell — present on any SLES 15 install. Verified by comparing the
+# declared requires of both rpms: identical bar /bin/bash against
+# /usr/bin/bash.
+
+- name: Look for the SLES build of the rpm
+  ansible.builtin.set_fact:
+    cee_install_rpm_glob: emc_cee_SLES-*.x86_64.rpm
+
+- name: Locate and stage the rpm
+  ansible.builtin.include_tasks: install_linux_locate.yml
+
+- name: Install CEE
+  # disable_gpg_check is set, for the same measured reason as the RHEL
+  # branch — and the claim this comment used to make was flatly wrong.
+  #
+  # It said "zypper will warn about the unknown key and proceed for a
+  # local package file". It does not proceed. On SLES 15 SP7:
+  #     Header V4 RSA/SHA256 Signature, key ID 07dd4467: NOKEY
+  #     Signature verification failed [4-Signatures public key is not available]
+  #     Installation has been aborted as directed.
+  # zypper aborts where dnf was merely assumed to be permissive; neither
+  # actually installs this rpm without the flag.
+  #
+  # Blast radius is one package. SLES pulls no dependencies for this rpm:
+  # boost, openssl, curl and jansson all ship inside /opt/CEEPack, and
+  # glibc, libstdc++, libgcc_s, libm and libpthread were confirmed
+  # present on a stock SLES 15 SP7 host. There is nothing else in the
+  # transaction whose verification this could weaken — but, as with the
+  # RHEL branch, `disable_gpg_check` is transaction-wide in
+  # `community.general.zypper`, not scoped to the local package; this is
+  # still evidence about this host, not a structural guarantee. The SLES
+  # case is stronger than RHEL's, since boost/openssl/curl/jansson ship
+  # inside /opt/CEEPack itself rather than being resolved from a
+  # repository, and the remaining glibc-family dependencies were
+  # confirmed present on the stock host rather than merely assumed — but
+  # it is still a measurement of one host's package set, not a guarantee
+  # that holds on every SLES 15 host.
+  #
+  # Same remedy as RHEL if you have Dell portal access: fetch the public
+  # key for F4A476D807DD4467, vendor it, `rpm --import` it on the target,
+  # and drop this flag.
+  community.general.zypper:
+    name: /tmp/{{ cee_install_rpm_local | basename }}
+    state: present
+    disable_gpg_check: true
+  become: true
+  notify: Restart emc_cee
+
+- name: Verify the installed layout
+  ansible.builtin.include_tasks: install_linux_verify.yml

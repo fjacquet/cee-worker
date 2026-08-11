@@ -1,0 +1,36 @@
+---
+# Platform gate, SUSE branch. Isolated from the dispatch so it can be
+# tested with overridden facts on a workstation, exactly like the RedHat
+# one.
+#
+# The SLES build of CEE reads /etc/os-release, /etc/redhat-release and
+# /etc/SuSE-release, and accepts both the SLES and the Red Hat product
+# strings — its platform check is a superset of the RHEL build's, not a
+# different one. It fails with the same message: "Platform is not
+# supported / qualified. CEE will now terminate."
+#
+# openSUSE Leap and Tumbleweed are rejected here for the same reason
+# Rocky and AlmaLinux are rejected on the Red Hat side: CEE looks for the
+# enterprise product string, and ABI compatibility does not help.
+
+- name: Host must be SUSE Linux Enterprise Server
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == 'SLES'
+    fail_msg: >-
+      Detected '{{ ansible_distribution }}'. CEE reads /etc/os-release and
+      self-terminates with "Platform is not supported / qualified" unless
+      it sees the SLES product string. openSUSE Leap and Tumbleweed fail
+      this check despite being closely related to SLES.
+
+- name: Host must be SLES major version 15
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution_major_version == '15'
+    fail_msg: >-
+      Detected SLES {{ ansible_distribution_major_version }}. This
+      deployment requires SLES 15. The vendored rpm links against
+      glibc 2.12+ symbols and ships its own boost, openssl, curl and
+      jansson under /opt/CEEPack, so the host only has to supply glibc and
+      a shell — but SLES 15 is the version this playbook has been written
+      and gated for.

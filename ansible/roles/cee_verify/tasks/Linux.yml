@@ -1,0 +1,121 @@
+---
+# The container failed silently: empty logs, no signal, nothing to
+# diagnose. Verification is a first-class step here, and each assertion
+# names the specific thing that is wrong.
+
+- name: Flush handlers so any pending restart happens before verification
+  ansible.builtin.meta: flush_handlers
+
+- name: Query the emc_cee unit state
+  ansible.builtin.systemd_service:
+    name: emc_cee
+  register: cee_verify_unit
+  become: true
+
+- name: Unit emc_cee must be running
+  ansible.builtin.assert:
+    that:
+      - cee_verify_unit.status.ActiveState == 'active'
+    fail_msg: >-
+      emc_cee is {{ cee_verify_unit.status.ActiveState }}, not active.
+      Check `journalctl -u emc_cee -n 50` — that is where CEE's own
+      output goes on Linux, not {{ cee_log_path }}, which this version
+      renders into its config and then ignores.
+
+- name: CEE must be listening on its inbound port
+  ansible.builtin.wait_for:
+    port: "{{ cee_http_port }}"
+    host: 127.0.0.1
+    state: started
+    timeout: 30
+  register: cee_verify_listening
+  # NOTE: deliberately ignore_errors, not failed_when: false. failed_when
+  # overwrites the registered result's own `failed` key with the
+  # failed_when expression's value, so `failed_when: false` forces
+  # cee_verify_listening.failed to False unconditionally -- a timed-out
+  # wait_for and a successful one become indistinguishable, and the assert
+  # below would never fire even with nothing listening. ignore_errors only
+  # stops the play from halting; it leaves the module's real
+  # success/failure in the registered var, which is what the next task
+  # actually needs to inspect. Verified empirically: with failed_when:
+  # false, `cee_verify_listening is not failed` was true even against a
+  # port nothing was listening on.
+  ignore_errors: true
+
+- name: Report a missing listener with the likely cause
+  ansible.builtin.assert:
+    that:
+      - cee_verify_listening is not failed
+    fail_msg: >-
+      Nothing is listening on {{ cee_http_port }}. CEE 9.2.0.0 (the
+      version this repo vendors and deploys) ships
+      Security/Http/ServerEnabled=0 by default; confirm the rendered
+      /opt/CEEPack/emc_cee_config.xml has it set to 1 and that CEE actually
+      read that file. (9.3.0.0 ships this default as 1 instead — if a
+      future upgrade moves this repo past 9.2.0.0, this is not the first
+      thing to check.)
+
+- name: Read CEE's own output from the journal
+  # CEE 9.2.0.0 writes no log file on Linux. Measured on RHEL 9.8 and
+  # SLES 15 SP7: /opt/CEEPack/logs/ stays empty even with Debug=1 and
+  # Verbose=1, the running process holds no log file descriptor, and the
+  # whole startup banner arrives on stdout — which systemd captures into
+  # the journal. <LogFile><Path> is rendered into emc_cee_config.xml and
+  # ignored by this version. Windows is the same shape: Application
+  # Event Log, no flat file.
+  #
+  # These two checks used to read files under cee_log_path. They could
+  # not pass on any real host, and the second one — the unsupported
+  # platform check — never inspected anything at all, because the first
+  # aborted the play before it ran.
+  #
+  # --since is anchored to this unit's own last start, taken from the
+  # query above rather than a second systemctl call. Without that anchor
+  # a "Platform is not supported" line from an earlier boot would fail a
+  # healthy deployment forever.
+  ansible.builtin.command:
+    argv:
+      - journalctl
+      - --unit=emc_cee
+      - --no-pager
+      - --output=cat
+      - --since={{ cee_verify_unit.status.ActiveEnterTimestamp }}
+  register: cee_verify_journal
+  changed_when: false
+  become: true
+
+- name: CEE itself must have logged, not just systemd
+  # Deliberately matches CEE's own '[EMC CEE]' prefix rather than testing
+  # that the journal is non-empty. systemd writes "Started CEE Service"
+  # whether or not the process ever says a word, so a non-empty test
+  # would pass against a CEE that started and immediately went mute —
+  # which is the exact failure class this role exists to catch.
+  ansible.builtin.assert:
+    that:
+      - "'[EMC CEE]' in cee_verify_journal.stdout"
+    fail_msg: >-
+      emc_cee is running but has written nothing of its own to the
+      journal since it started
+      ({{ cee_verify_unit.status.ActiveEnterTimestamp }}). systemd may
+      still report the unit as active while the process is mute. Read
+      `journalctl -u emc_cee -n 50` on the host: a healthy start prints a
+      banner beginning "[EMC CEE]: CEE Version".
+
+- name: The journal must not report an unsupported platform
+  ansible.builtin.assert:
+    that:
+      - "'Platform is not supported' not in cee_verify_journal.stdout"
+    fail_msg: >-
+      CEE reports an unsupported platform and will self-terminate. On
+      RHEL, /etc/redhat-release does not contain the literal Red Hat
+      string this host claimed to have; on SLES, /etc/os-release or
+      /etc/SuSE-release does not contain the genuine SUSE product string
+      CEE expects.
+
+- name: Report the verified state
+  ansible.builtin.debug:
+    msg: >-
+      CEE active, listening on {{ cee_http_port }}, logging to the
+      journal (`journalctl -u emc_cee`). Endpoints:
+      {% for e in cee_endpoints %}{{ e.name }}@http://{{ e.host }}:{{ e.port }}{% if not loop.last %}, {% endif %}{% endfor %}.
+      Next: run the two-stage event test in docs/powerstore-setup-runbook.md.

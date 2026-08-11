@@ -1,8 +1,47 @@
 # CEE Ansible Deployment — Acceptance Tests
 
-This is the test plan for the **first live deployment**. Every test below
-is a test *to be run*. None of them has been run. Nothing in this document
-records a result.
+This is the test plan for validating a live deployment. Install,
+configuration and verification (AT-4 through AT-7 in spirit, and the
+platform-specific reads noted below) have now been **executed against
+real hosts on all three platforms this repo implements** — RHEL 9.8,
+SLES 15 SP7 and Windows Server 2025 Datacenter, in the same
+`ansible-playbook site.yml` run (`rhel ok=61 changed=2 failed=0`,
+`sles ok=60 changed=2 failed=0`, `winvm ok=56 changed=2 failed=0`). What
+has **not** run, on any platform, is the end-to-end event path: no
+PowerStore array has ever been in the loop. Every test below that
+depends on the array (AT-8 through AT-14) is still a test *to be run*,
+and this document does not silently upgrade any of them to "passed" —
+where a test has genuinely executed, that is stated explicitly next to
+it; everything else stays exactly as untested as it was before.
+
+## Platform coverage
+
+This plan targets the three platforms the Ansible roles implement:
+RHEL 9, SLES 15, and Windows Server. Nothing below is platform-specific
+by design where it can help it — `cee_configure` and `cee_verify` share
+task files across the two Linux rpms because they ship an identical
+payload, so the same checks and the same false-pass traps apply to both;
+Windows uses its own task files (registry writes instead of a rendered
+config, the Event Log instead of the journal) but is held to the same
+intent at each step. Where a test *is* platform-specific (AT-4's
+`/etc/redhat-release` read, AT-5's UBI/dnf plumbing, AT-6's rpm path),
+that is called out in the test itself; treat AT-4/AT-5/AT-6 as needing a
+SLES-flavoured re-read (`/etc/os-release` or `/etc/SuSE-release`,
+`zypper` instead of `dnf`, the SLES rpm) rather than a literal re-run of
+the RHEL commands — and as not applying to Windows at all, which has no
+rpm and no dnf/zypper equivalent. Run the full Linux sequence once per
+Linux platform; Windows-specific verification is covered separately in
+`docs/ansible-deployment.md`'s Windows section, not rewritten here
+test-by-test.
+
+**What remains unverified on Windows specifically, beyond the array gap
+every platform shares:** the host used for the harvest and this run was
+WORKGROUP, not domain-joined, so nothing domain-dependent (a domain
+service account, `EMC CAVA` under a domain security context, delegation)
+has been validated. And unlike the Linux hosts — whose reachability was
+proven after opening an AWS security group by hand, outside Ansible —
+the Windows host's inbound port was never opened, so its network path is
+unverified even at the level the Linux hosts have reached.
 
 Work through `docs/ansible-deployment.md` and
 `docs/powerstore-setup-runbook.md` for the procedures themselves — this
@@ -11,40 +50,51 @@ recognise a lie.
 
 ## What is already verified, and what that is worth
 
-Five things run today, all of them on a workstation or a CI runner:
+Five things run on every commit, all of them on a workstation or a CI
+runner, contacting no host:
 
 | Command | What it actually proves |
 |---|---|
-| `ansible/tests/run.sh` | Five localhost playbooks: the config template renders the expected XML from known variables; the endpoint validator rejects loopback, bare hostnames and an empty list; the platform gate rejects Rocky and RHEL 8; the required-variable gate rejects an incomplete `group_vars`; and the sub-facility gate rejects a non-Audit selection, two enabled facilities, and none. Every negative test has been mutation-tested — its guard disabled, the test watched to fail, the guard restored. No host is contacted. |
+| `ansible/tests/run.sh` | Six localhost playbooks: the config template renders the expected XML from known variables; the endpoint validator rejects loopback, bare hostnames and an empty list; the OS-family dispatch gate rejects an unsupported family (e.g. Debian) by name; the platform gates reject Rocky, RHEL 8, openSUSE Leap and a Windows client edition by name; the required-variable gate rejects an incomplete `group_vars`; and the sub-facility gate rejects a non-Audit selection, two enabled facilities, and none. Every negative test has been mutation-tested — its guard disabled, the test watched to fail, the guard restored. No host is contacted. |
 | `cd ansible && ansible-playbook --syntax-check site.yml` | The playbook parses and every module named in it resolves. It does not execute a single task. |
 | `yamllint ansible/ .github/` | Formatting. |
 | `ansible-lint ansible/` | Rule compliance at the `production` profile. Idempotency claims in it are static heuristics, not observations. |
 | `docker compose config` | The test stack's compose file is well formed. |
 
-That is a real safety net for *authoring* mistakes and nothing more. In
-particular, these checks cannot see anything that only exists at runtime:
-a package that will not install, a daemon that will not start, a port a
-firewall drops, an SELinux denial, a wrong address in a publishing pool.
+That was originally a real safety net for *authoring* mistakes and
+nothing more, deliberately unable to see anything that only exists at
+runtime. It no longer stands alone: on this branch, `ansible-playbook
+site.yml` has additionally **run to completion against real hosts on all
+three implemented platforms**, in a single play —
+`rhel ok=61 changed=2 failed=0`, `sles ok=60 changed=2 failed=0`,
+`winvm ok=56 changed=2 failed=0`. That proves the package/exe installs,
+the service starts, the port listens, and the log/event evidence
+`cee_verify` looks for is actually written — on RHEL 9.8, SLES 15 SP7
+and Windows Server 2025 Datacenter. It does **not** prove anything about
+SELinux denials (AT-9), the array-facing hops (AT-8 onward), or, on
+Windows specifically, anything domain-dependent or the inbound network
+path — see the caveats in "Platform coverage" above.
 
 ## What has never been executed
 
-Stated plainly, because the rest of this plan is calibrated against it:
+Stated plainly, because the rest of this plan is calibrated against it.
+Two claims that used to live here are now false in the understating
+direction and have been corrected rather than left in place:
 
-- **No rpm has ever been installed by this code.** `cee_install` has never
-  run against a RHEL host.
-- **No `emc_cee` service has ever been started by this code.** The
-  container path in this repo starts CEE a different way, through
-  `entrypoint.sh`, not through the systemd unit these roles manage.
 - **No PowerStore array has ever been configured from
-  `docs/powerstore-setup-runbook.md`.** The procedure is transcribed from
-  vendor documentation, not from a completed run.
-- **No event has ever travelled the full path.** Not
+  `docs/powerstore-setup-runbook.md`, on any platform.** The procedure is
+  transcribed from vendor documentation, not from a completed run.
+- **No event has ever travelled the full path, on any platform.** Not
   PowerStore → CEE, and not CEE → cee-exporter. The runbook's Stage 2
-  probe exercises the consumer alone.
+  probe exercises the consumer alone. Install, configuration and
+  verification of CEE itself have run for real (see above); the array
+  side of the flowchart below has not been touched.
 - **No `.evtx` this repo produced has ever been read by Windows.** The
   file is written by a non-Windows build through a Go encoder, and every
   check available on macOS or RHEL passes identically on a valid file and
-  on a corrupt one. AT-14 exists for this and needs a Windows host.
+  on a corrupt one. AT-14 exists for this and needs a Windows host. (This
+  is unrelated to CEE's own Windows deployment above — it is about the
+  cee-exporter output file, not about CEE itself running on Windows.)
 - **The GitHub Actions workflow has never run.** `.github/workflows/ansible.yml`
   has never completed on any runner.
 - **The `ansible-galaxy collection install` step has never been exercised
@@ -52,6 +102,11 @@ Stated plainly, because the rest of this plan is calibrated against it:
   development workstation, so a green local `ansible-lint` proves nothing
   about a checkout that does not have it. Test AT-1 exists for this
   reason.
+- **Domain-joined Windows behaviour is completely unvalidated.** The
+  Windows host used for both the CEE 9.x harvest and this deployment run
+  was standalone (`WORKGROUP`). Nothing about a domain service account,
+  `EMC CAVA` running under a domain security context, or delegation has
+  been observed.
 
 ## The event path
 
@@ -279,18 +334,29 @@ CEE's own platform check passed — not just Ansible's.
     systemctl is-active emc_cee
     systemctl cat emc_cee | head -20
     ss -lntp | grep 12228
-    grep -i 'platform' /opt/CEEPack/logs/*.log
+    systemctl show emc_cee -p ActiveEnterTimestamp
+    journalctl -u emc_cee --since "<ActiveEnterTimestamp>" | grep -i 'platform'
+
+CEE 9.2.0.0 writes no log file on Linux — `/opt/CEEPack/logs/` stays
+empty even with `Debug=1 Verbose=1`; the process holds no log file
+descriptor. Its entire output goes to stdout, which systemd captures
+into the journal. That is why `cee_verify` reads `journalctl -u emc_cee`
+rather than looking for a file.
 
 **Expect** `active`; the unit is the rpm's, unmodified; a listener on
 12228 owned by `emc_cee.exe`; and **no** `Platform is not supported`
-anywhere in the log.
+anywhere in the journal output since the unit's current start.
 
 **False pass** `systemctl is-active` returning `active` for a unit with
 `Restart=` and a crash loop is a known trap — check `systemctl status
 emc_cee` for a restart count and `journalctl -u emc_cee` for repeated
-starts. An empty log directory is not a pass either; it was the container's
-exact failure signature. `cee_verify` asserts a log file exists, but a log
-that exists and is empty still needs a human to look at it once.
+starts. A second trap is specific to the journal: reading it without
+`--since <ActiveEnterTimestamp>` can match a `Platform is not supported`
+line left over from an *earlier* boot or an earlier, since-fixed config,
+making a currently-healthy unit look rejected (or, worse, hiding a
+current rejection behind an old clean run). That is exactly why
+`cee_verify` anchors its read to the unit's own `ActiveEnterTimestamp`
+instead of scanning the whole journal.
 
 ---
 

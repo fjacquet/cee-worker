@@ -1,0 +1,28 @@
+---
+# Platform-neutral gates, shared by every supported OS.
+#
+# Everything in this role operates on variables only, in pure Jinja, with
+# no module whose behaviour depends on the target platform. That is what
+# lets ansible/tests/ exercise the whole gate suite on a localhost control
+# node with no VM, no CEE install and no network — and it is why the same
+# three files serve RHEL, SLES and Windows without being rewritten.
+#
+# Keep it that way. A gate that needs a module belongs in the platform
+# branch of cee_preflight, not here.
+#
+# Order matters. assert_required_vars runs first so that a missing
+# group_vars/all.yml is named here, rather than surfacing several tasks
+# later as a raw Jinja undefined against the wrong task.
+
+- name: Assert every required variable is defined
+  ansible.builtin.include_tasks: assert_required_vars.yml
+
+# These two used to live in cee_configure, which ran after cee_install.
+# Their own comments claim they are "enforced before anything is written
+# to the target host" — a promise that position did not quite keep. Here
+# it does: nothing has touched the host yet.
+- name: Validate endpoints before touching the host
+  ansible.builtin.include_tasks: validate_endpoints.yml
+
+- name: Assert the sub-facility selection is one CEE will actually publish
+  ansible.builtin.include_tasks: assert_facilities.yml

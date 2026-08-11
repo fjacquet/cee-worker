@@ -1,22 +1,46 @@
 ---
 # Copy to hosts.yml and edit. hosts.yml is gitignored.
 #
-# The CEE host must be genuine RHEL 9 — the playbook refuses to continue
-# otherwise, because CEE self-terminates on RHEL rebuilds.
+# Linux CEE hosts must be genuine RHEL 9 or SLES 15 — the playbook refuses
+# to continue otherwise, because CEE self-terminates on rebuilds such as
+# Rocky, AlmaLinux and openSUSE. Windows CEE hosts must be a genuine
+# Windows Server edition — client editions (Workstation) are rejected the
+# same way.
 all:
   children:
     cee:
-      hosts:
-        cee01.example.com:
-          ansible_host: 10.10.10.20
-          # An ordinary login, not root. Every task in every role that
-          # needs privilege declares `become: true`, so sudo supplies it;
-          # this account only needs passwordless sudo (or run the playbook
-          # with --ask-become-pass). Direct root SSH is not required and
-          # most hardened RHEL 9 builds disable it anyway.
-          ansible_user: ceeadmin
-          #
-          # ansible.cfg keeps host_key_checking on. Accept the host key
-          # once before the first unattended run, or ansible waits on a
-          # prompt nobody is there to answer:
-          #     ssh-keyscan -H 10.10.10.20 >> ~/.ssh/known_hosts
+      children:
+        # Two child groups whose only job is to carry per-OS variables:
+        # cee_log_path for both, plus the connection settings for Windows.
+        # site.yml still runs a single play over the cee group.
+        cee_linux:
+          hosts:
+            cee01.example.com:
+              ansible_host: 10.10.10.20
+              # An ordinary login, not root. Every task in every role that
+              # needs privilege declares `become: true`, so sudo supplies it;
+              # this account only needs passwordless sudo (or run the playbook
+              # with --ask-become-pass). Direct root SSH is not required and
+              # most hardened RHEL 9 builds disable it anyway.
+              ansible_user: ceeadmin
+              #
+              # ansible.cfg keeps host_key_checking on. Accept the host key
+              # once before the first unattended run, or ansible waits on a
+              # prompt nobody is there to answer:
+              #     ssh-keyscan -H 10.10.10.20 >> ~/.ssh/known_hosts
+
+        # Windows Server support is implemented. A single
+        # ansible-playbook site.yml run has completed with failed=0
+        # against a real Windows Server 2025 Datacenter host, in the
+        # same play as RHEL and SLES hosts — see
+        # docs/ansible-deployment.md's Windows section for what that
+        # does and does not prove (WORKGROUP only, inbound port never
+        # opened). Example host:
+        #
+        # cee_windows:
+        #   hosts:
+        #     ceewin01.example.com:
+        #       ansible_host: 10.10.10.30
+        #       ansible_user: ceeadmin
+        cee_windows:
+          hosts: {}

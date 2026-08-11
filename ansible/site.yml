@@ -1,8 +1,11 @@
 ---
-- name: Deploy Dell CEE to a RHEL 9 host
+- name: Deploy Dell CEE
   hosts: cee
   gather_facts: true
   roles:
+    # Variable, endpoint and sub-facility gates. First, and platform-neutral:
+    # every one of these can fail before a single byte reaches the host.
+    - cee_common
     - cee_preflight
     - cee_install
     - cee_configure

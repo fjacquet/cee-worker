@@ -1,0 +1,32 @@
+---
+# Platform gate, Windows branch. Isolated from the dispatch so it can be
+# tested with overridden facts on a workstation, exactly like the RedHat
+# and Suse ones.
+#
+# The asymmetry noted in assert_os_family.yml holds here too: dispatch
+# keys on ansible_os_family, this gate judges on the finer facts. Every
+# Windows edition reports ansible_os_family == 'Windows', so a Windows 11
+# desktop routes here and is rejected below by name.
+#
+# Verified on the harvest host: ansible_os_product_type is 'server'
+# (lowercase) and ansible_os_installation_type is 'Server' on Windows
+# Server 2025 Datacenter. The product_type fact is used because it is the
+# normalised one.
+#
+# No major-version gate, unlike RHEL 9 and SLES 15. Dell qualifies CEE
+# against a list of Windows Server releases rather than a single one, and
+# this repo has observed exactly one of them (Server 2025, build
+# 10.0.26100). Asserting a version list nobody has measured would be
+# inventing a constraint; asserting only "Server" is what the evidence
+# supports.
+
+- name: Host must be a Windows Server edition
+  ansible.builtin.assert:
+    that:
+      - ansible_os_product_type == 'server'
+    fail_msg: >-
+      Detected '{{ ansible_distribution }}' with
+      ansible_os_product_type '{{ ansible_os_product_type }}'. CEE is a
+      server-side service that Dell qualifies on Windows Server editions
+      only; a client edition such as Windows 10 or 11 is not a supported
+      CEE host, whatever it reports for ansible_os_family.

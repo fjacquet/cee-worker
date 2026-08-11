@@ -85,10 +85,13 @@ To recheck by hand on the CEE host:
 
     systemctl is-active emc_cee
     ss -lntp | grep 12228
-    tail -n 50 /opt/CEEPack/logs/*.log
+    journalctl -u emc_cee -n 50
 
-Expected: `active`, a listener on 12228, and a log with no
-`Platform is not supported`.
+Expected: `active`, a listener on 12228, and no `Platform is not
+supported` in the journal output. CEE 9.2.0.0 writes no log file on
+Linux — its entire output goes to stdout, which systemd captures into
+the journal — so `journalctl -u emc_cee`, not a file under
+`/opt/CEEPack/logs/`, is the only place to see it.
 
 ### Stage 2 — the consumer is reachable and parsing
 
@@ -246,9 +249,15 @@ this order, cheapest first:
 3. **CEE's access list.** `AccessListEnabled` is 1 by default and only
    the addresses in `cee_access_list` may post. A NAS server publishing
    from an address that is not on that list is refused at CEE, not at the
-   firewall. Check `/opt/CEEPack/logs/*.log` on the CEE host — a rejected
-   source is logged; a firewalled one leaves no trace at all. That
-   difference is the fastest way to tell the two apart.
+   firewall. CEE 9.2.0.0 writes no log file on Linux — check the journal
+   instead, on the CEE host:
+
+       journalctl -u emc_cee --since "-10min"
+
+   A rejected source is logged there; a firewalled one leaves no trace
+   at all, in the journal or anywhere else. That difference — something
+   in the journal versus nothing — is the fastest way to tell the two
+   apart.
 
 4. **The PowerStore side.** Recheck that Events Publishing is enabled on
    both the NAS server *and* the individual filesystem, that the protocol

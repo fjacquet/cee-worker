@@ -35,7 +35,7 @@
     - name: Expect the gate to fail
       block:
         - name: Assert facilities
-          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/assert_facilities.yml
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_facilities.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "A selection CEE would never publish from was allowed through."
@@ -65,7 +65,7 @@
     - name: Expect the gate to fail
       block:
         - name: Assert facilities
-          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/assert_facilities.yml
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_facilities.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "Two feeds were switched on and the role raised no objection."
@@ -93,7 +93,7 @@
     - name: Expect the gate to fail
       block:
         - name: Assert facilities
-          ansible.builtin.include_tasks: ../roles/cee_configure/tasks/assert_facilities.yml
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_facilities.yml
         - name: Should be unreachable
           ansible.builtin.fail:
             msg: "Every feed was switched off and the role raised no objection."
@@ -119,4 +119,4 @@
       vcaps: false
   tasks:
     - name: Assert facilities
-      ansible.builtin.include_tasks: ../roles/cee_configure/tasks/assert_facilities.yml
+      ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_facilities.yml

@@ -1,0 +1,73 @@
+---
+- name: Render the CEE configuration
+  ansible.builtin.template:
+    src: emc_cee_config.xml.j2
+    dest: /opt/CEEPack/emc_cee_config.xml
+    owner: ceesvc
+    group: ceesvc
+    mode: "0640"
+    backup: true
+  become: true
+  notify: Restart emc_cee
+
+# Both RHEL 9 and SLES 15 ship firewalld enabled with only ssh allowed, so
+# a stock host on either platform drops PowerStore's posts to 12228 while
+# every check in cee_verify — which probes 127.0.0.1, a path firewalld
+# does not filter — still passes. That combination is the worst kind of
+# green run, on either platform.
+- name: Open the CEE inbound port
+  when: cee_manage_firewall | bool
+  block:
+    - name: Collect service facts to establish whether firewalld exists
+      ansible.builtin.service_facts:
+      become: true
+
+    - name: Record the firewalld state
+      ansible.builtin.set_fact:
+        cee_configure_firewalld_state: >-
+          {{ (ansible_facts.services | default({}))
+             .get('firewalld.service', {})
+             .get('state', 'absent') }}
+
+    # `immediate` talks to the running daemon over D-Bus and errors out if
+    # firewalld is stopped, so it is conditioned on the daemon actually
+    # running. `permanent` writes the zone file either way, which is the
+    # branch that matters: a host with firewalld installed-but-stopped is
+    # one `systemctl start firewalld` away from silently blocking CEE.
+    - name: Allow PowerStore to reach the CEE listener through firewalld
+      ansible.posix.firewalld:
+        port: "{{ cee_http_port }}/tcp"
+        permanent: true
+        immediate: "{{ cee_configure_firewalld_state == 'running' }}"
+        state: enabled
+      become: true
+      when: cee_configure_firewalld_state != 'absent'
+
+    - name: Report that firewalld could not be used
+      ansible.builtin.debug:
+        msg: >-
+          firewalld is not installed on this host, so nothing opened
+          {{ cee_http_port }}/tcp. This is not necessarily a problem — the
+          host may have no host firewall at all — but it is unverified.
+          If iptables/nftables rules are managed some other way, confirm
+          {{ cee_http_port }}/tcp is reachable *from the PowerStore NAS
+          server address*, not from the CEE host itself: cee_verify probes
+          loopback and cannot see a filtered path.
+      when: cee_configure_firewalld_state == 'absent'
+
+    - name: Report that firewalld is installed but not running
+      ansible.builtin.debug:
+        msg: >-
+          firewalld is installed but {{ cee_configure_firewalld_state }}.
+          The permanent rule for {{ cee_http_port }}/tcp has been written,
+          so starting firewalld later will not break CEE, but no rule is
+          in force right now.
+      when: cee_configure_firewalld_state not in ['absent', 'running']
+
+- name: Enable and start CEE
+  ansible.builtin.systemd_service:
+    name: emc_cee
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true

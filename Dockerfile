@@ -7,7 +7,7 @@
 # real, not spoofed.
 FROM registry.access.redhat.com/ubi9/ubi
 
-COPY bin/*.rpm /tmp/
+COPY bin/emc_cee_RHEL-*.x86_64.rpm /tmp/
 RUN rpm -i /tmp/*.rpm && rm -f /tmp/*.rpm
 
 # Belt-and-suspenders: sets image-baked ownership for the case where the

@@ -1,0 +1,142 @@
+---
+# Windows configuration. There is no XML template on this platform: the
+# live configuration IS the registry tree under HKLM:\SOFTWARE\EMC\CEE.
+# (C:\Program Files\EMC\CEE\Config.xml exists but is a "Decorator"
+# name→registry-path mapping used by a management UI, not the config.)
+#
+# Every path below was read off a real 9.2.0.0 install, see
+# docs/superpowers/specs/2026-08-10-cee-windows-releve.md. The registry
+# tree mirrors the Linux XML node for node.
+
+- name: Set the CEE listener ports
+  ansible.windows.win_regedit:
+    path: HKLM:\SOFTWARE\EMC\CEE\Configuration
+    name: "{{ item.name }}"
+    data: "{{ item.data }}"
+    type: dword
+  loop:
+    - {name: HttpPort, data: "{{ cee_http_port }}"}
+    - {name: HttpsPort, data: "{{ cee_https_port }}"}
+  loop_control:
+    label: "{{ item.name }}={{ item.data }}"
+  notify: Restart emc_cee
+
+- name: Set the CEE tuning values
+  ansible.windows.win_regedit:
+    path: HKLM:\SOFTWARE\EMC\CEE\Configuration
+    name: "{{ item.name }}"
+    data: "{{ item.data }}"
+    type: dword
+  loop:
+    - {name: CacheSize, data: "{{ cee_cache_size }}"}
+    - {name: NumberOfThreads, data: "{{ cee_threads }}"}
+    - {name: Debug, data: "{{ cee_debug }}"}
+    - {name: Verbose, data: "{{ cee_verbose }}"}
+  loop_control:
+    label: "{{ item.name }}={{ item.data }}"
+  notify: Restart emc_cee
+
+# CEE 9.2.0.0 ships Security\Http\ServerEnabled = 0 on Windows just as it
+# does on Linux — confirmed by diffing a fresh install against 9.3.0.0,
+# which ships 1. Without this write CEE starts, the services report
+# Running, and nothing ever listens on the CEE port. This is the exact
+# counterpart of the ServerEnabled=1 the Linux XML template sets.
+- name: Enable the CEE HTTP server
+  ansible.windows.win_regedit:
+    path: HKLM:\SOFTWARE\EMC\CEE\Configuration\Security\Http
+    name: ServerEnabled
+    data: 1
+    type: dword
+  notify: Restart emc_cee
+
+- name: Set the access-list policy
+  ansible.windows.win_regedit:
+    path: HKLM:\SOFTWARE\EMC\CEE\Configuration\Security\Access
+    name: AccessListEnabled
+    data: "{{ cee_access_list_enabled }}"
+    type: dword
+  notify: Restart emc_cee
+
+- name: Set the access list
+  ansible.windows.win_regedit:
+    path: HKLM:\SOFTWARE\EMC\CEE\Configuration\Security\Access
+    name: AccessList
+    data: "{{ cee_access_list | join(',') }}"
+    type: string
+  notify: Restart emc_cee
+
+# One value per facility, all under CEPP\<Facility>\Configuration\Enabled.
+# cee_common's assert_facilities.yml has already established that exactly
+# one is true and that it is Audit, so this loop cannot enable a
+# combination CEE would accept and then publish nothing from.
+#
+# A looped win_regedit is fine — the no-loop rule in this repo is about
+# assert, whose per-item failure message becomes invisible under a loop.
+- name: Set the CEE sub-facilities
+  ansible.windows.win_regedit:
+    path: HKLM:\SOFTWARE\EMC\CEE\CEPP\{{ item.key | capitalize }}\Configuration
+    name: Enabled
+    data: "{{ 1 if item.value else 0 }}"
+    type: dword
+  loop: "{{ cee_facilities | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}={{ item.value }}"
+  notify: Restart emc_cee
+
+# Same string CEE expects on Linux: name@http://host:port, semicolon
+# separated, and ORDER MATTERS — CEE monitors the first endpoint to decide
+# whether to publish at all, so if the first one is down nobody receives
+# events. cee_common's validate_endpoints.yml has already rejected
+# loopback hosts, bare hostnames and non-integer ports.
+- name: Set the Audit endpoint
+  ansible.windows.win_regedit:
+    path: HKLM:\SOFTWARE\EMC\CEE\CEPP\Audit\Configuration
+    name: EndPoint
+    data: >-
+      {% for e in cee_endpoints %}{{ e.name }}@http://{{ e.host }}:{{ e.port }}{% if not loop.last %};{% endif %}{% endfor %}
+    type: string
+  notify: Restart emc_cee
+
+# The Windows firewall does not filter loopback any more than firewalld
+# does, so cee_verify's port probe passes on a firewalled host that drops
+# every event PowerStore sends. That combination is the worst kind of
+# green run, which is why the skip path below is loud.
+- name: Open the CEE inbound port
+  when: cee_manage_firewall | bool
+  community.windows.win_firewall_rule:
+    name: CEE inbound {{ cee_http_port }}
+    localport: "{{ cee_http_port }}"
+    action: allow
+    direction: in
+    protocol: tcp
+    profiles: domain,private,public
+    state: present
+    enabled: true
+
+- name: Report that the host firewall was left alone
+  ansible.builtin.debug:
+    msg: >-
+      cee_manage_firewall is false, so nothing opened
+      {{ cee_http_port }}/tcp in the Windows firewall. Confirm the port is
+      reachable *from the PowerStore NAS server address*, not from this
+      host — cee_verify probes loopback, which no host firewall filters,
+      and cannot see a blocked path. A cloud security group or a network
+      ACL sits above the host firewall and is invisible to this playbook
+      either way.
+  when: not (cee_manage_firewall | bool)
+
+# EMC Checker Server — display name "EMC CAVA", binary CAVA.exe — is the
+# service that owns the CEPA HTTP listener. Measured: with Audit enabled
+# and ServerEnabled=1, port 12228 is held by CAVA.exe (pid 2824 at the
+# time), not by CEEMtrSvc.exe.
+#
+# The naming inverts the intuition. "EMC CEE Monitor" is the service with
+# CEE in its name, and it is NOT the one that serves events; managing it
+# here would report Running while the port stayed dead — precisely the
+# silent success this repo exists to prevent. Do not "correct" this to
+# the more obvious-looking service name.
+- name: Enable and start CEE
+  ansible.windows.win_service:
+    name: EMC Checker Server
+    start_mode: auto
+    state: started
