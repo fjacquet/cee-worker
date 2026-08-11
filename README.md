@@ -1,5 +1,11 @@
 # cee-worker
 
+[![Ansible](https://github.com/fjacquet/cee-worker/actions/workflows/ansible.yml/badge.svg)](https://github.com/fjacquet/cee-worker/actions/workflows/ansible.yml)
+[![Publish](https://github.com/fjacquet/cee-worker/actions/workflows/publish.yml/badge.svg)](https://github.com/fjacquet/cee-worker/actions/workflows/publish.yml)
+[![Release](https://img.shields.io/github/v/tag/fjacquet/cee-worker?label=release&sort=semver)](https://github.com/fjacquet/cee-worker/tags)
+[![CEE](https://img.shields.io/badge/CEE-9.2.0.0-blue)](https://www.dell.com/support/product-details/en-us/product/common-event-enabler)
+[![Platforms](https://img.shields.io/badge/platforms-RHEL%209%20%7C%20SLES%2015%20%7C%20Windows%20Server-informational)](docs/ansible-deployment.md)
+
 Dell Common Event Enabler (CEE) 9.2.0.0 — deployed to RHEL 9, SLES 15 or
 Windows Server with Ansible for PowerStore-facing use, and packaged as a
 container (RHEL-based only) for local experimentation. The rpm/exe
