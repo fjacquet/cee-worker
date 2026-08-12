@@ -246,18 +246,29 @@ this order, cheapest first:
 
        nc -vz <cee-host> 12228
 
-3. **CEE's access list.** `AccessListEnabled` is 1 by default and only
-   the addresses in `cee_access_list` may post. A NAS server publishing
-   from an address that is not on that list is refused at CEE, not at the
-   firewall. CEE 9.2.0.0 writes no log file on Linux — check the journal
-   instead, on the CEE host:
+3. **CEE's access list.** `AccessListEnabled` is 1 by default. Measured on
+   real arrays: with the list populated by **IP address**, CEE refuses every
+   array's heartbeat outright, naming the *server name* rather than the
+   source address —
+
+       CTransport+::ValidateArgs(): PowerStore BAD CEPP_HEARTBEAT request (server [NAS01] event not allowed)
+
+   — even though the address that heartbeat came from was on the list. The
+   array reports this as a setup failure and never publishes at all:
+   PowerStore raises `0x01301b03 all publishing pools unavailable`, OneFS
+   logs `vcstatus 0x1: VC_ERROR_SETUP`. Setting `cee_access_list_enabled: 0`
+   clears it immediately. See `cepa-bring-up-findings.md` — including the
+   caveat that this removes a real access control, leaving the firewall as
+   the only gate.
+
+   **Read the journal, but turn debug on first.** At the shipped
+   `Debug=0`/`Verbose=0`, CEE 9.2.0.0 writes *nothing* to the journal — not
+   even for a successful exchange, confirmed by capturing a healthy
+   heartbeat on the wire and finding `-- No entries --` across that exact
+   window. An empty journal is therefore not evidence that nothing arrived.
+   Set `cee_debug: 1` and `cee_verbose: 1`, re-run the playbook, then:
 
        journalctl -u emc_cee --since "-10min"
-
-   A rejected source is logged there; a firewalled one leaves no trace
-   at all, in the journal or anywhere else. That difference — something
-   in the journal versus nothing — is the fastest way to tell the two
-   apart.
 
 4. **The PowerStore side.** Recheck that Events Publishing is enabled on
    both the NAS server *and* the individual filesystem, that the protocol

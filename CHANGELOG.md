@@ -10,6 +10,37 @@ Dell CEE build and the useful version to know is CEE's own.
 
 ## [Unreleased]
 
+### Added
+
+- `docs/cepa-bring-up-findings.md` — what the first bring-up against real
+  arrays actually measured, from `epg` driving `cee-sles01` with a
+  PowerStore (NAS01) and a 4-node PowerScale in the loop. Stage 3 of the
+  runbook remains unproven: no array-originated event has reached the
+  consumer. What changed is that the failure is localised — every leg this
+  repo controls is verified working, and the remainder is array-side event
+  generation.
+
+### Fixed
+
+- **The access list refuses every array when it holds IP addresses.**
+  Measured against both PowerStore and PowerScale: with
+  `AccessListEnabled=1` and an address-based `cee_access_list`, CEE rejects
+  the CEPA heartbeat naming the NAS *server name*
+  (`server [NAS01] event not allowed`) even though the address that sent it
+  was on the list. The array reports a setup failure and never publishes —
+  PowerStore raises `0x01301b03`, OneFS logs `VC_ERROR_SETUP`. Peer
+  Software's guide, written against PowerStoreOS 4.1 and CEE 9.2,
+  independently lists `AccessListEnabled ≠ 0` as a cause of "pool reachable
+  but zero events". `all.yml.example` and the runbook's Stage 3 diagnosis
+  now say so; whether server names work in place of addresses is untested.
+- **`journalctl -u emc_cee` is empty at the shipped `Debug=0`/`Verbose=0`,
+  even for a successful exchange** — confirmed by capturing a healthy
+  heartbeat on the wire and finding `-- No entries --` across that exact
+  window. The runbook told operators to read the journal and to treat
+  silence as meaningful; it now says to enable `cee_debug` and
+  `cee_verbose` first. Every root cause found during bring-up came from
+  that switch and none was visible without it.
+
 ## [9.2.0.2] - 2026-08-11
 
 ### Added
