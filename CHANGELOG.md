@@ -10,6 +10,43 @@ Dell CEE build and the useful version to know is CEE's own.
 
 ## [Unreleased]
 
+### Added
+
+- `docs/cepa-bring-up-findings.md` — what the first bring-up against real
+  arrays actually measured, from `epg` driving `cee-sles01` with a
+  PowerStore (NAS01) and a 4-node PowerScale in the loop. Stage 3 of the
+  runbook remains unproven: no array-originated event has reached the
+  consumer *through CEE*. What changed is that the failure is localised, and
+  it is two faults — PowerStore connects cleanly and generates no events
+  (array-side, a Dell matter), while PowerScale generates events that CEE
+  cannot parse the handshake for (CEE-side).
+
+### Changed
+
+Guidance only — no default, template or role changed, so both conditions
+below still apply to a deployment made from the shipped example.
+
+- Reversed this repo's advice on `cee_access_list_enabled`. `1` was
+  described as the right posture on a real network; measured against real
+  arrays it refuses every one of them when the list holds IP addresses, and
+  the array then never publishes at all. `all.yml.example`,
+  `ansible-deployment.md` and the runbook's Stage 3 diagnosis now say so.
+  See `docs/cepa-bring-up-findings.md`.
+- The runbook told operators to read the journal and treat silence as
+  meaningful. Past the startup banner CEE 9.2.0.0 logs nothing per request
+  at the shipped `Debug=0`/`Verbose=0`, so Stage 3 diagnosis now begins by
+  enabling `cee_debug` and `cee_verbose`. See
+  `docs/cepa-bring-up-findings.md`.
+- Both prerequisite lists now state why SMB is required on the NAS server:
+  an NFS-only NAS server cannot enable Events Publishing at all.
+
+### Fixed
+
+- `bin/emc_cee_RHEL-9.2.0.0.x86_64.rpm` is exempted from the `bin/*.rpm`
+  Git LFS filter. It predates `.gitattributes` and is deliberately an
+  ordinary blob, but the glob matched it anyway, so `git diff` reported it
+  as permanently modified and `git add` would have converted it.
+
 ## [9.2.0.2] - 2026-08-11
 
 ### Added

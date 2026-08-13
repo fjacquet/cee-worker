@@ -36,10 +36,16 @@ cee_endpoints:
 # ansible.posix collection: see ansible/requirements.yml.
 cee_manage_firewall: true
 
-# Restrict which sources may post events. 1 is the vendor default and the
-# right posture on a real network. Set to 0 only to isolate a bring-up
-# problem, then set it back.
+# Restrict which sources may post events. 1 is the vendor default, but it
+# has never been made to work: measured on real PowerStore and PowerScale
+# arrays, 1 with an address-populated list refuses every array and the array
+# then never publishes at all. Expect to need 0, and understand that 0
+# leaves the firewall the only gate on who may post to 12228.
+# See docs/cepa-bring-up-findings.md for the measurement and the untested
+# server-name alternative.
 cee_access_list_enabled: 1
+# Every publishing source, one per line. Only consulted when the flag above
+# is 1.
 cee_access_list:
   - 10.20.30.40           # PowerStore NAS server address
 
