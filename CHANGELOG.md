@@ -10,6 +10,8 @@ Dell CEE build and the useful version to know is CEE's own.
 
 ## [Unreleased]
 
+## [9.2.0.3] - 2026-08-13
+
 ### Added
 
 - `docs/cepa-bring-up-findings.md` — what the first bring-up against real
