@@ -36,23 +36,16 @@ cee_endpoints:
 # ansible.posix collection: see ansible/requirements.yml.
 cee_manage_firewall: true
 
-# Restrict which sources may post events. 1 is the vendor default and the
-# right posture on a real network. Set to 0 only to isolate a bring-up
-# problem, then set it back.
-#
-# BUT: measured on real PowerStore and PowerScale arrays, an IP-populated
-# list with AccessListEnabled=1 refuses every array. CEE validates the NAS
-# *server name* ("server [NAS01] event not allowed"), not the source
-# address, so an address that did send the heartbeat is still rejected —
-# and the array then never publishes at all. Whether server names work here
-# instead of addresses is untested. Until it is, expect to need 0 to bring
-# an array up, and understand that 0 leaves the firewall as the only gate
-# on who may post to 12228. See docs/cepa-bring-up-findings.md.
-#
-# List every publishing source. A OneFS cluster runs one forwarder per
-# node and publishes from each node address independently, not just from
-# the one you configured it through.
+# Restrict which sources may post events. 1 is the vendor default, but it
+# has never been made to work: measured on real PowerStore and PowerScale
+# arrays, 1 with an address-populated list refuses every array and the array
+# then never publishes at all. Expect to need 0, and understand that 0
+# leaves the firewall the only gate on who may post to 12228.
+# See docs/cepa-bring-up-findings.md for the measurement and the untested
+# server-name alternative.
 cee_access_list_enabled: 1
+# Every publishing source, one per line. Only consulted when the flag above
+# is 1.
 cee_access_list:
   - 10.20.30.40           # PowerStore NAS server address
 

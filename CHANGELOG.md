@@ -20,26 +20,31 @@ Dell CEE build and the useful version to know is CEE's own.
   repo controls is verified working, and the remainder is array-side event
   generation.
 
+### Changed
+
+Guidance only — no default, template or role changed, so both conditions
+below still apply to a deployment made from the shipped example.
+
+- Reversed this repo's advice on `cee_access_list_enabled`. `1` was
+  described as the right posture on a real network; measured against real
+  arrays it refuses every one of them when the list holds IP addresses, and
+  the array then never publishes at all. `all.yml.example`,
+  `ansible-deployment.md` and the runbook's Stage 3 diagnosis now say so.
+  See `docs/cepa-bring-up-findings.md`.
+- The runbook told operators to read the journal and treat silence as
+  meaningful. Past the startup banner CEE 9.2.0.0 logs nothing per request
+  at the shipped `Debug=0`/`Verbose=0`, so Stage 3 diagnosis now begins by
+  enabling `cee_debug` and `cee_verbose`. See
+  `docs/cepa-bring-up-findings.md`.
+- Both prerequisite lists now state why SMB is required on the NAS server:
+  an NFS-only NAS server cannot enable Events Publishing at all.
+
 ### Fixed
 
-- **The access list refuses every array when it holds IP addresses.**
-  Measured against both PowerStore and PowerScale: with
-  `AccessListEnabled=1` and an address-based `cee_access_list`, CEE rejects
-  the CEPA heartbeat naming the NAS *server name*
-  (`server [NAS01] event not allowed`) even though the address that sent it
-  was on the list. The array reports a setup failure and never publishes —
-  PowerStore raises `0x01301b03`, OneFS logs `VC_ERROR_SETUP`. Peer
-  Software's guide, written against PowerStoreOS 4.1 and CEE 9.2,
-  independently lists `AccessListEnabled ≠ 0` as a cause of "pool reachable
-  but zero events". `all.yml.example` and the runbook's Stage 3 diagnosis
-  now say so; whether server names work in place of addresses is untested.
-- **`journalctl -u emc_cee` is empty at the shipped `Debug=0`/`Verbose=0`,
-  even for a successful exchange** — confirmed by capturing a healthy
-  heartbeat on the wire and finding `-- No entries --` across that exact
-  window. The runbook told operators to read the journal and to treat
-  silence as meaningful; it now says to enable `cee_debug` and
-  `cee_verbose` first. Every root cause found during bring-up came from
-  that switch and none was visible without it.
+- `bin/emc_cee_RHEL-9.2.0.0.x86_64.rpm` is exempted from the `bin/*.rpm`
+  Git LFS filter. It predates `.gitattributes` and is deliberately an
+  ordinary blob, but the glob matched it anyway, so `git diff` reported it
+  as permanently modified and `git add` would have converted it.
 
 ## [9.2.0.2] - 2026-08-11
 

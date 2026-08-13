@@ -41,7 +41,10 @@ and is not established.
   missing the guard for the other two.
 - Time synchronised across the PowerStore array, the CEE host, and the
   consumer host
-- SMB configured on PowerStore; NFS optional
+- SMB configured on PowerStore; NFS optional. Not a preference — an NFS-only
+  NAS server cannot have Events Publishing enabled at all (Dell KB 000060271);
+  a standalone SMB server with no shares satisfies it. See
+  `cepa-bring-up-findings.md`.
 - **TCP 12228 open inbound on the CEE host**, from the PowerStore NAS
   server addresses. RHEL 9 and SLES 15 ship firewalld enabled with only
   ssh allowed, and Windows Server ships Windows Firewall enabled, so this
@@ -350,9 +353,12 @@ to be `audit`, because the template renders `<EndPoint>` only for Audit —
 any other choice would produce an enabled facility with an empty endpoint
 list, which starts and logs and listens and delivers nothing.
 
-**Access list blocking bring-up.** Set `cee_access_list_enabled: 0`
-temporarily to isolate the problem, then set it back to `1`. It is the
-vendor default and the right posture on a real network.
+**Access list blocking bring-up.** Set `cee_access_list_enabled: 0`. `1` is
+the vendor default, but it has never been made to work: measured against
+real PowerStore and PowerScale arrays, `1` with an address-populated list
+refuses every array's heartbeat and the array then never publishes at all.
+See `cepa-bring-up-findings.md`. With `0`, the firewall is the only gate on
+who may post to 12228.
 
 **Vendor unit and service account.** The rpm installs
 `/etc/systemd/system/emc_cee.service`, which runs `emc_cee.exe -daemon`
