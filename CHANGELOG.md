@@ -16,9 +16,10 @@ Dell CEE build and the useful version to know is CEE's own.
   arrays actually measured, from `epg` driving `cee-sles01` with a
   PowerStore (NAS01) and a 4-node PowerScale in the loop. Stage 3 of the
   runbook remains unproven: no array-originated event has reached the
-  consumer. What changed is that the failure is localised — every leg this
-  repo controls is verified working, and the remainder is array-side event
-  generation.
+  consumer *through CEE*. What changed is that the failure is localised, and
+  it is two faults — PowerStore connects cleanly and generates no events
+  (array-side, a Dell matter), while PowerScale generates events that CEE
+  cannot parse the handshake for (CEE-side).
 
 ### Changed
 

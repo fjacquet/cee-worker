@@ -229,9 +229,17 @@ this. In `group_vars/all.yml`, in one edit:
 
 then `ansible-playbook site.yml` once. Doing this first rather than partway
 down the list matters: the re-run rewrites `emc_cee_config.xml` and restarts
-the service, which invalidates anything already read from either. Set all
-three back when the diagnosis closes — debug logging is not a steady-state
-setting.
+the service, which invalidates anything already read from either.
+
+Set `cee_debug` and `cee_verbose` back to 0 when the diagnosis closes — debug
+logging is not a steady-state setting. Leave `cee_access_list_enabled` at 0:
+restoring it to 1 with an address-based list restores the failure in step 3.
+It is not a diagnostic setting to be undone, and it stays off until someone
+tests the server-name form. Because that leaves CEE accepting posts from
+anything that can reach 12228, restrict the port by source rather than
+opening it broadly — `cee_manage_firewall` opens 12228 to any source, so a
+source-scoped firewalld rich rule or an upstream network ACL naming the array
+addresses is what actually replaces the access list here.
 
 Read CEE's own output anchored to the restart, so nothing from before it can
 be mistaken for a result, and with heartbeats filtered out — at a 10s
@@ -239,7 +247,12 @@ interval they will otherwise be all you see:
 
     journalctl -u emc_cee \
       --since "$(systemctl show -p ActiveEnterTimestamp --value emc_cee)" \
-      | grep -v HEARTBEAT
+      | grep -vE 'DispatchEvent\(\): .*CEPP_HEARTBEAT request'
+
+Filter the *successful* heartbeats specifically, not every line matching
+`HEARTBEAT`. The access-list rejection in step 3 is itself a heartbeat line
+(`BAD CEPP_HEARTBEAT request ... event not allowed`), so the broader filter
+would hide the failure this section exists to find.
 
 Then check in this order, cheapest first:
 

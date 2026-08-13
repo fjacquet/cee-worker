@@ -358,7 +358,9 @@ the vendor default, but it has never been made to work: measured against
 real PowerStore and PowerScale arrays, `1` with an address-populated list
 refuses every array's heartbeat and the array then never publishes at all.
 See `cepa-bring-up-findings.md`. With `0`, the firewall is the only gate on
-who may post to 12228.
+who may post to 12228 — and `cee_manage_firewall` opens that port to any
+source, so restrict it to the array addresses with a source-scoped firewalld
+rich rule or an upstream network ACL before leaving the access list off.
 
 **Vendor unit and service account.** The rpm installs
 `/etc/systemd/system/emc_cee.service`, which runs `emc_cee.exe -daemon`

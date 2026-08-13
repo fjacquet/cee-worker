@@ -11,10 +11,20 @@ debug journal, `isi_audit_viewer` on the cluster. Where a claim is an
 inference rather than a measurement it says so.
 
 **Outcome: Stage 3 of `powerstore-setup-runbook.md` is still unproven.** No
-array-originated event has ever reached the consumer. What changed is that the
-failure is now localised: every leg this repo controls is verified working, and
-the remaining fault is array-side event *generation*, which is a Dell support
-matter. Stages 1 and 2 pass.
+array-originated event has ever reached the consumer *through CEE*. Stages 1
+and 2 pass. What changed is that the failure is localised, and it is two
+distinct faults, not one:
+
+- **PowerStore** connects, heartbeats cleanly and generates no events. Every
+  leg this repo controls is verified working, so the remaining fault is
+  array-side event *generation* — a Dell support matter.
+- **PowerScale** generates events correctly but CEE cannot parse its
+  handshake, so nothing is forwarded. That is a CEE-side limitation, not an
+  array fault, and it is separate from the PowerStore case.
+
+Events *have* reached cee-exporter from PowerScale, but only by bypassing CEE
+entirely, with the exporter patched to answer OneFS directly. That is a
+finding about the exporter, not a Stage 3 pass.
 
 ## The access list rejects every array when it holds IP addresses
 
