@@ -1,0 +1,58 @@
+---
+# Windows-only variable gate, the counterpart of
+# assert_required_vars_linux.yml. Isolated from preflight_windows.yml so
+# tests/ can include it with a deliberately incomplete variable set, like
+# every other gate in this repo.
+#
+# These two live in group_vars rather than in a cee_install defaults/
+# file. That was tried and rejected: ansible-lint's production profile
+# requires role defaults to carry the role name as a prefix
+# (var-naming[no-role-prefix]), which would have meant either
+# cee_install_windows_product_id — inconsistent with every other cee_*
+# variable in this repo, all of which come from group_vars — or a second
+# `noqa`, in a repo that documents having exactly one and treats adding
+# another as needing the same scrutiny.
+#
+# Requiring them outright, rather than defaulting to the vendored
+# 9.2.0.0, is the deliberate choice. A default here would let a host that
+# forgot the pair silently install a different release than the operator
+# believed, which is the same class of silent success the rest of this
+# role exists to prevent.
+
+- name: Windows hosts must define the CEE release they target
+  # Not two separate asserts, and not a loop: these two are a pair, and
+  # naming them together is what makes a half-filled file obvious. A
+  # looped assert would bury the fail_msg under "One or more items
+  # failed" anyway — see the note in CLAUDE.md.
+  ansible.builtin.assert:
+    that:
+      - cee_windows_version is defined
+      - cee_windows_product_id is defined
+    fail_msg: >-
+      cee_windows_version and/or cee_windows_product_id is undefined.
+      Copy ansible/group_vars/cee_windows.yml.example to
+      ansible/group_vars/cee_windows.yml and fill both in. They are a
+      pair: win_package decides whether CEE is already installed purely
+      from the ProductCode, and the GUID changes with every CEE release,
+      so the version alone cannot drive the install and the GUID alone
+      cannot be checked against what the host reports. Known pairs are
+      listed in the example file.
+
+# Optional, unlike the pair above — but a half-filled pair is not. An
+# account with no password reaches win_service as an undefined-variable
+# error deep in cee_configure, after the registry has already been
+# rewritten; naming it here means it fails before anything is touched.
+- name: A CEE service account must come with a password
+  ansible.builtin.assert:
+    that:
+      - cee_windows_service_password is defined
+    fail_msg: >-
+      cee_windows_service_account is set to
+      '{{ cee_windows_service_account | default("") }}' but
+      cee_windows_service_password is undefined. The two go together: the
+      vendor's install-completion step runs the EMC CAVA service as a
+      domain account, and a service account cannot be set without its
+      password. Put the password in a vault — group_vars/cee_windows.yml
+      is gitignored, which is not the same as encrypted. Leave both unset
+      to keep the service on whatever account it already has.
+  when: cee_windows_service_account is defined

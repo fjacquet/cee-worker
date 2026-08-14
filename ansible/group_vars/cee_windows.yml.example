@@ -56,3 +56,70 @@ ansible_shell_type: powershell
 # This overrides whatever ControlMaster setting the operator's
 # ~/.ssh/config carries, so their interactive sessions keep multiplexing.
 ansible_ssh_common_args: '-o ControlMaster=no -o ControlPath=none'
+
+# Which CEE release these hosts run. BOTH are required — cee_preflight's
+# assert_required_vars_windows.yml refuses to continue without them, and
+# there is deliberately no default: silently installing a different
+# release than the operator believed is the same class of silent success
+# the rest of this repo exists to prevent.
+#
+# They are a pair. win_package decides whether CEE is already installed
+# purely from the ProductCode, and the GUID changes with every release,
+# so cee_install reads HKLM:\SOFTWARE\EMC\CEE\Version back afterwards and
+# asserts it equals cee_windows_version — a half-updated pair fails
+# loudly instead of configuring whichever CEE happens to be there.
+#
+# Known pairs, both read out of a live Uninstall key on a real host
+# rather than guessed — docs/superpowers/specs/2026-08-10-cee-windows-
+# releve.md:
+#
+#   9.2.0.0  {81F4A925-A885-4F58-8907-641BC7E82B99}   <- vendored in bin/
+#   9.3.0.0  {149370D4-461B-43D1-9D8E-71FCBA58A618}
+#
+# Naming a release bin/ does not carry is supported when the host already
+# has it installed: cee_install checks the Uninstall key first, skips
+# staging entirely, and goes straight to verifying layout and version.
+# That is the normal case for 9.3.0.0 — Dell ships its installer only
+# through their authenticated portal, so none is vendored here.
+#
+# The registry tree is identical between 9.2.0.0 and 9.3.0.0 (measured,
+# full diff in the harvest doc above), so cee_configure needs no version
+# branch. The only functional difference is the
+# Security\Http\ServerEnabled default — 0 in 9.2.0.0, 1 in 9.3.0.0 — and
+# cee_configure writes 1 either way.
+cee_windows_version: 9.2.0.0
+cee_windows_product_id: '{81F4A925-A885-4F58-8907-641BC7E82B99}'
+
+# The account the EMC CAVA service (Windows service name "EMC Checker
+# Server") logs on as. OPTIONAL, and both go together or neither does —
+# cee_preflight rejects an account with no password.
+#
+# This is the vendor's "Complete the CEE installation for Windows Server"
+# step (Using the Common Event Enabler on Windows Platforms 9.x rev 24,
+# pp11-12): the service should run as a domain account holding the rights
+# to set up CAVA and CEPA server accounts, not as LocalSystem. It requires
+# a domain-joined host, so it is off by default.
+#
+# Leaving both unset does NOT reset the service to LocalSystem — it leaves
+# whatever account the service already has. A host configured by hand
+# cannot be silently reverted by a playbook run that omits these.
+#
+# cee_configure grants SeServiceLogonRight to the account before setting
+# it. That is required: the Services MMC grants it implicitly when an
+# operator picks an account there, win_service does not, and without it the
+# service accepts the credentials and then fails to start at next boot with
+# a logon error rather than a privilege one.
+#
+# Measured caveat worth knowing before you decide you need this: CEE's
+# outbound leg to an HTTP consumer works as LocalSystem on a workgroup
+# host — verified continuously against cee-exporter. The guide frames the
+# domain account around Microsoft RPC consumers; an HTTP consumer may not
+# need it. See docs/cee-9-3-windows-bring-up.md.
+#
+# ansible-vault this file, or reference a vaulted variable. Gitignored is
+# not encrypted.
+#
+# cee_windows_service_account: DIAB\svc-cepa
+# cee_windows_service_password: !vault |
+#         $ANSIBLE_VAULT;1.1;AES256
+#         ...

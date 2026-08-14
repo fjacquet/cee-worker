@@ -135,6 +135,42 @@
 # here would report Running while the port stayed dead — precisely the
 # silent success this repo exists to prevent. Do not "correct" this to
 # the more obvious-looking service name.
+# The vendor's "Complete the CEE installation for Windows Server" step
+# (Using the Common Event Enabler on Windows Platforms 9.x rev 24, pp11-12):
+# the EMC CAVA service must log on as a domain account holding the rights to
+# set up CAVA and CEPA server accounts, not as LocalSystem. Optional here
+# because it is only reachable on a domain-joined host, and because CEE's
+# outbound leg to an HTTP consumer has been measured working as LocalSystem
+# on a workgroup host — see docs/cee-9-3-windows-bring-up.md. Undefined
+# leaves whatever account the service already has, so this cannot silently
+# revert a host someone configured by hand.
+#
+# Granting the logon right first is not optional and not cosmetic. The
+# Services MMC grants SeServiceLogonRight implicitly when an operator sets
+# an account there; win_service does not. Without it the credentials are
+# accepted, the service fails to start at next boot, and the error names a
+# logon failure rather than a missing privilege.
+- name: Grant the CEE service account the right to log on as a service
+  when: cee_windows_service_account is defined
+  community.windows.win_user_right:
+    name: SeServiceLogonRight
+    users:
+      - "{{ cee_windows_service_account }}"
+    action: add
+
+# Split from the start task below so that no_log covers the password and
+# nothing else. Putting no_log on a combined task would also suppress the
+# failure message when the service will not start, which is the one message
+# worth reading in this role.
+- name: Set the CEE service logon account
+  when: cee_windows_service_account is defined
+  ansible.windows.win_service:
+    name: EMC Checker Server
+    username: "{{ cee_windows_service_account }}"
+    password: "{{ cee_windows_service_password }}"
+  no_log: true
+  notify: Restart emc_cee
+
 - name: Enable and start CEE
   ansible.windows.win_service:
     name: EMC Checker Server
