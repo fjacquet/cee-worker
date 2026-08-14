@@ -40,21 +40,42 @@ cee_manage_firewall: true
 # right posture on a real network. Set to 0 only to isolate a bring-up
 # problem, then set it back.
 #
-# BUT: measured on real PowerStore and PowerScale arrays, an IP-populated
-# list with AccessListEnabled=1 refuses every array. CEE validates the NAS
-# *server name* ("server [NAS01] event not allowed"), not the source
-# address, so an address that did send the heartbeat is still rejected —
-# and the array then never publishes at all. Whether server names work here
-# instead of addresses is untested. Until it is, expect to need 0 to bring
-# an array up, and understand that 0 leaves the firewall as the only gate
-# on who may post to 12228. See docs/cepa-bring-up-findings.md.
+# THIS LIST HOLDS FQDNs, NOT IP ADDRESSES. Getting that wrong is the single
+# most expensive mistake available here, because the symptom looks like a
+# network fault rather than a config one: CEE refuses the array's CEPA
+# heartbeat with
+#
+#   CTransport+::ValidateArgs(): PowerStore BAD CEPP_HEARTBEAT request
+#   (server [NAS01] event not allowed)
+#
+# naming the NAS *server*, and the array then reports its publishing pools
+# unavailable and never publishes at all. An address that demonstrably did
+# send the heartbeat is still rejected. Measured against real PowerStore
+# and PowerScale arrays on 2026-08-12, and documented by Dell: "Set the
+# AccessList REG_SZ option to the list of FQDNs from which CEE accepts
+# messages" (Using the Common Event Enabler on Windows Platforms 9.x, rev
+# 24, p22).
+#
+# The one exception is also Dell's: "The AccessList for PowerScale products
+# must ALSO contain the IP addresses from which CEE accepts messages." So a
+# mixed estate lists NAS-server FQDNs *and* every OneFS node address. That
+# asymmetry is not arbitrary — OneFS nodes here have no PTR records at all,
+# so there is no name for CEE to match them by.
 #
 # List every publishing source. A OneFS cluster runs one forwarder per
 # node and publishes from each node address independently, not just from
 # the one you configured it through.
+#
+# Set this to 0 only to isolate a bring-up problem, and treat setting it
+# back as part of finishing the job: 0 leaves the host firewall as the only
+# gate on who may post to 12228.
 cee_access_list_enabled: 1
 cee_access_list:
-  - 10.20.30.40           # PowerStore NAS server address
+  - nas01.example.com     # PowerStore NAS server FQDN — a name, not an address
+  - 10.20.30.41           # PowerScale node 1 — OneFS is the documented
+  - 10.20.30.42           # PowerScale node 2   exception: addresses, and
+  - 10.20.30.43           # PowerScale node 3   every node, not just one
+  - 10.20.30.44           # PowerScale node 4
 
 # Exactly one sub-facility should be true. Audit is the synchronous
 # real-time path cee-exporter speaks. VCAPS is async bulk delivery and
