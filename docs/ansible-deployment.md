@@ -219,8 +219,10 @@ guessed:
   string. No uninstall automation exists in this repo.
 - **`Security\Http\ServerEnabled` ships `0` in 9.2.0.0**, exactly like
   the Linux XML default, and `cee_configure`'s Windows branch writes it
-  to `1`. (9.3.0.0 ships it as `1`; this repo vendors and deploys
-  9.2.0.0 only, so do not restore any unscoped "9.x" wording.) The
+  to `1`. (9.3.0.0 ships it as `1`; `bin/` vendors 9.2.0.0 only, but a
+  Windows host that already carries another release can target it with
+  the `cee_windows_version` / `cee_windows_product_id` pair, so do not
+  restore any unscoped "9.x" wording.) The
   listener binds `::` (the IPv6 wildcard), not an IPv4 address —
   probing `127.0.0.1` still works under dual-stack, but the bind itself
   is not IPv4.

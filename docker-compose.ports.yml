@@ -1,0 +1,19 @@
+# Publishes cee-exporter on 12228 as well as 12229, so an array can be pointed
+# at it using the CEPA default port and only the server address has to change.
+#
+# 12229 exists in docker-compose.test.yml because the exporter and a
+# containerised CEE once shared this host and could not both own 12228. CEE now
+# runs on its own VM (win25), so 12228 is free here — but 12229 is kept so
+# nothing already pointed at it breaks.
+#
+# Deliberately NOT named docker-compose.override.yml: that filename is
+# auto-loaded by every `docker compose` invocation in this directory, including
+# ones targeting docker-compose.yml, where these services do not exist.
+# Pass it explicitly:
+#   docker compose -f docker-compose.test.yml -f docker-compose.ports.yml up -d cee-exporter
+services:
+  cee-exporter:
+    ports: !override
+      - "9228:9228"
+      - "12229:12228"
+      - "12228:12228"

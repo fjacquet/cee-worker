@@ -76,8 +76,9 @@ No rebuild needed for config-only changes.
 > line, but the rpm shipped here is CEE 9.2.0.0. Config semantics changed
 > between the two lines — notably, 9.2.0.0 introduced "secure defaults"
 > where the HTTP server (`Security/Http/ServerEnabled`) is off unless
-> explicitly enabled (9.3.0.0 flips this default back to on — this repo
-> vendors and deploys 9.2.0.0 only), which the 8.x guide's example config
+> explicitly enabled (9.3.0.0 flips this default back to on — `bin/`
+> vendors 9.2.0.0 only, though a Windows host that already carries
+> 9.3.0.0 can be targeted at it), which the 8.x guide's example config
 > doesn't mention. Treat the
 > 8.x guide as a general reference and cross-check anything config- or
 > security-related against the 9.x release notes/guide if available,

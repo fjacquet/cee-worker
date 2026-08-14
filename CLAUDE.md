@@ -71,8 +71,8 @@ docker compose -f docker-compose.test.yml run --rm pstcli -version
 |---|---|
 | `cee_common` | Platform-neutral gates, pure Jinja, shared by every OS: required vars defined, endpoints valid, sub-facilities sane. Runs first — everything here can fail before a single byte reaches the host. `cee_log_path` is deliberately **not** here — see below. |
 | `cee_preflight` | Genuine RHEL 9, SLES 15, or Windows Server (client editions rejected); clock synced; reports a pre-existing listener on `cee_http_port` |
-| `cee_install` | RHEL: UBI 9 repos (installed disabled, `enablerepo`'d for one transaction), then the rpm. SLES: `community.general.zypper` installs the rpm directly, no repo setup. Windows: `win_copy` stages the exe, `win_package` runs it silently against its ProductCode. All three assert the installed layout (`/opt/CEEPack` + `emc_cee.service` on Linux; `CAVA.exe` + `CEEMtrSvc.exe` on Windows) |
-| `cee_configure` | Validates endpoints, gates sub-facilities. Linux: renders `emc_cee_config.xml.j2`, opens firewalld. Windows: writes the same values as `win_regedit` under `HKLM:\SOFTWARE\EMC\CEE`, opens the port with `community.windows.win_firewall_rule`. Both enable and start the service |
+| `cee_install` | RHEL: UBI 9 repos (installed disabled, `enablerepo`'d for one transaction), then the rpm. SLES: `community.general.zypper` installs the rpm directly, no repo setup. Windows: if the targeted ProductCode is already registered, staging is skipped entirely (hosts often arrive with CEE preinstalled and Dell gates the installers behind their portal); otherwise `win_copy` stages the exe and `win_package` runs it silently against that ProductCode. Either way the installed registry `Version` is asserted against `cee_windows_version`. All three assert the installed layout (`/opt/CEEPack` + `emc_cee.service` on Linux; `CAVA.exe` + `CEEMtrSvc.exe` on Windows) |
+| `cee_configure` | Optionally sets the `EMC Checker Server` logon account from `cee_windows_service_account`/`_password` (the vendor's install-completion step; grants `SeServiceLogonRight` first, because `win_service` does not and the MMC does). Validates endpoints, gates sub-facilities. Linux: renders `emc_cee_config.xml.j2`, opens firewalld. Windows: writes the same values as `win_regedit` under `HKLM:\SOFTWARE\EMC\CEE`, opens the port with `community.windows.win_firewall_rule`. Both enable and start the service |
 | `cee_verify` | Unit/service active, port listening, log/event evidence written, no unsupported-platform line. Linux reads `journalctl`; Windows reads the Application Event Log — see below |
 
 **The dispatch routes; the gate judges.** Every role dispatches on
@@ -100,8 +100,11 @@ that split when adding a gate.
 targets its own platform — the Dockerfile globs only the RHEL rpm (the
 container is not extended to SLES or Windows), `cee_install`'s
 `RedHat.yml` globs the RHEL rpm, its `Suse.yml` globs the SLES rpm, and
-its `Windows.yml` globs the exe. Each glob requires exactly one matching
-file; remove the old one before adding a new one. `.gitattributes` puts
+its Windows path globs the exe. The two rpm globs require exactly one
+matching file; remove the old one before adding a new one. The Windows
+glob is the exception — it interpolates `cee_windows_version` into the
+filename (`EMC_CEE_Pack_x64_9_2_0_0.exe`), so `bin/` may hold several
+releases at once and each host selects its own. `.gitattributes` puts
 `bin/*.rpm` and `bin/*.exe` in Git LFS, but only for future commits — the
 RHEL rpm predates it and stays an ordinary blob deliberately, to avoid
 rewriting history for a 4 MB file.
@@ -175,6 +178,18 @@ that read it could not pass on any real host.
   renders `<EndPoint>` only for Audit; any other choice yields
   `<Enabled>1</Enabled>` with an empty endpoint — starts, listens, logs,
   passes every check, forwards nothing forever.
+- **`cee_access_list` holds FQDNs, not IP addresses.** Dell: "Set the
+  AccessList REG_SZ option to the list of FQDNs from which CEE accepts
+  messages" — with one stated exception, "The AccessList for PowerScale
+  products must *also* contain the IP addresses" (*Using the Common Event
+  Enabler on Windows Platforms* 9.x rev 24, p22). An address-populated
+  list with `AccessListEnabled=1` refuses every array, and the refusal
+  names the NAS *server* — `server [NAS01] event not allowed` — which is
+  the tell that it wanted a name. The array then reports its publishing
+  pools unavailable and never publishes, so this reads as a network fault
+  and costs hours. A mixed estate lists NAS-server FQDNs *and* every OneFS
+  node address; OneFS nodes have no PTR records, so there is no name to
+  match them by.
 - **`cee_verify` probes 127.0.0.1**, which firewalld does not filter. A
   firewalled host passes every check while dropping every real event.
   That's why `cee_manage_firewall` exists and why its skip path is loud.
@@ -191,7 +206,15 @@ that read it could not pass on any real host.
   `Running`.
 - **Windows installer specifics, all measured, not guessed.** ProductCode
   `{81F4A925-A885-4F58-8907-641BC7E82B99}` is version-specific to
-  9.2.0.0. Silent install is `/s /v"/qn"` — a Flexera InstallShield 27
+  9.2.0.0; 9.3.0.0 is `{149370D4-461B-43D1-9D8E-71FCBA58A618}`. Both were
+  read out of a live Uninstall key. The GUID pairs with
+  `cee_windows_version`; both are required, set together in
+  `group_vars/cee_windows.yml` and gated by
+  `cee_preflight/tasks/assert_required_vars_windows.yml` — never one
+  without the other, and deliberately with no default, which is
+  why `cee_install` reads `HKLM:\SOFTWARE\EMC\CEE\Version` back and
+  asserts it against the targeted version rather than trusting the GUID
+  it searched with. Silent install is `/s /v"/qn"` — a Flexera InstallShield 27
   wrapper, not a bare MSI. The registered UninstallString is
   `MsiExec.exe /I{GUID}` (`/I`, repair, not `/X`); any future uninstall
   automation must build `msiexec /x <GUID> /qn` itself rather than reuse
@@ -235,6 +258,14 @@ that read it could not pass on any real host.
 
 - `docs/ansible-deployment.md` — prerequisites, setup, troubleshooting
 - `docs/powerstore-setup-runbook.md` — the array side + end-to-end event test
+- `docs/cepa-bring-up-findings.md` — what the first real-array bring-up
+  measured (CEE 9.2.0.0 on SLES). Read before touching anything
+  array-facing.
+- `docs/cee-9-3-windows-bring-up.md` — the second bring-up (CEE 9.3.0.0 on
+  Windows Server 2025). Why `Debug`/`Verbose` are inert on Windows and the
+  wire is the only instrument, why `pktmon` must be stopped before a
+  capture reads as non-empty, CEE 9.3 rejecting OneFS heartbeats with HTTP
+  400, and the OneFS `eventType` table resolved in full.
 - `docs/acceptance-tests.md` — the plan for the first live deployment.
   Install, configuration and verification have now run against real
   RHEL 9, SLES 15 and Windows Server hosts on this branch; the
