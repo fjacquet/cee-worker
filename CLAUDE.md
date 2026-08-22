@@ -190,6 +190,47 @@ that read it could not pass on any real host.
   and costs hours. A mixed estate lists NAS-server FQDNs *and* every OneFS
   node address; OneFS nodes have no PTR records, so there is no name to
   match them by.
+- **CEE will not publish to a consumer it has not registered.** It PUTs
+  `<RegisterRequest />` to every configured EndPoint every 10 s and parses
+  the reply into a `CRegisterResponse`; the reply must be a
+  `<RegisterResponse>` document carrying `friendlyName`, `guid`, `version`
+  and `desc`, plus a `<Filter protocol="…"><EventTypeFilter value="0x…"/>`.
+  An empty body fails with `Top node is not RegisterResponse`, no partner is
+  registered, and CEE then answers **every** array heartbeat `status="0x16"`
+  (`VC_ERROR_CEPP_NOT_FOUND`) — the array counts its events missed and
+  transmits none. Every observable stays green.
+
+  **This WAS the cause of the `0x16` on this deployment, and it is fixed.**
+  A dead-endpoint control appeared to exonerate the consumer leg — CEE gives
+  the array the identical `0x16` either way — but that is a false negative:
+  a dead endpoint and a rejected registration both mean "no partner". Nor is
+  CEE's 10-second re-registration cadence a signal; it is identical against a
+  valid, an empty and a malformed reply. Only `Debug=63` distinguishes them.
+  See `docs/cepa-2026-08-22-powerstore-session.md`.
+- **CEE only registers consumers on its compiled-in allowlist.** `CGuidStore`
+  maps *(friendlyName, facility)* → GUID, 47 entries baked into
+  `libCEPPAPIWrapper.so`. The partner id in `EndPoint`, the `friendlyName` in
+  the `<RegisterResponse>` and its `guid` must all match one row whose facility
+  matches the enabled one. A self-generated GUID can never work. The full table
+  and its provenance are in `docs/cee-partner-allowlist.md`; this deployment
+  uses `PeerSoftwareCollector` + `49f4da0f-055f-401c-9f83-a95ce61447f6`.
+  Registering is still not enough — CEE then probes with `<HeartBeatRequest />`
+  and needs `hbStatus=0`, or the partner stays OFFLINE and the array gets `0x12`.
+- **`Debug`/`Verbose` are a 6-bit mask, not a scale.** `1` prints the banner
+  only, `9` prints *less* than `3`, and **63** is the maximum — the level at
+  which CEE names the reason it refused a partner. Three bring-ups concluded
+  "CEE tells you nothing" on the strength of `Debug=1`.
+- **The CEPA consumer contract is readable from the vendored rpm.** Dell
+  publishes no protocol specification and CEE on Windows writes no log at
+  all, so `bin/emc_cee_RHEL-9.2.0.0.x86_64.rpm` is the reference of record:
+  `libCEPPFilter.so` holds `CEndPoint::Init()`'s validation messages and the
+  `EVENT_*` / filter vocabulary, `libCEPPAPIWrapper.so` holds the literal
+  `RegisterResponse` template CEE uses for its own SplunkHEC proxy plus the
+  `<CheckEventRequest>` event shape, and the `ProtocolDesc` symbol resolves
+  the filter's protocol codes (0=CIFS, 1=NFS, 2=FTP, 3=Unknown). The rpm is
+  Linux, the target is often Windows — that does not matter, both are built
+  from one source, and this is a spec lookup, not something to install.
+  Prefer it over web sources, which have been wrong here in both directions.
 - **`cee_verify` probes 127.0.0.1**, which firewalld does not filter. A
   firewalled host passes every check while dropping every real event.
   That's why `cee_manage_firewall` exists and why its skip path is loud.
@@ -266,13 +307,25 @@ that read it could not pass on any real host.
   wire is the only instrument, why `pktmon` must be stopped before a
   capture reads as non-empty, CEE 9.3 rejecting OneFS heartbeats with HTTP
   400, and the OneFS `eventType` table resolved in full.
+- `docs/cepa-2026-08-22-powerstore-session.md` — **the session that solved it.**
+  `CEPP_NOT_FOUND` was CEE refusing an unlisted partner identity. Read its
+  "Corrections to earlier documents" before trusting host facts in the two
+  bring-up documents, and its `Debug=63` note before concluding CEE is silent.
+  Carries the reusable `cepa_probe.sh` measurement loop.
+- `docs/cee-partner-allowlist.md` — the 47 identities CEE will register, keyed
+  by facility, extracted from `CGuidStore::Init()`. Read this before changing
+  anything about the consumer's identity.
+- `docs/superpowers/specs/2026-08-10-cepa-wire-protocol.md` — the CEE→consumer
+  leg. Carries a correction dated 2026-08-21: its original "reply with an
+  empty body" conclusion was wrong and is the reason two bring-ups ended
+  silent. Read the correction, not just the summary.
 - `docs/acceptance-tests.md` — the plan for the first live deployment.
-  Install, configuration and verification have now run against real
-  RHEL 9, SLES 15 and Windows Server hosts on this branch; the
-  end-to-end event path has not, because no PowerStore array has ever
-  been in the loop on any platform. That document is explicit about
-  which of its tests that leaves proven and which remain to be run.
-  Don't state otherwise.
+  Install, configuration and verification have run against real RHEL 9,
+  SLES 15 and Windows Server hosts. **The end-to-end event path is now
+  proven too** (2026-08-22): PowerStore SMB activity → NAS01 → CEE 9.3 on
+  Windows → cee-exporter → binary `.evtx` read back by `Get-WinEvent` on
+  Windows Server 2025. That document predates the run and still describes
+  Stage 3 as outstanding; the session document is the current record.
 - `docs/cee-8-x-linux-guide_en-us.pdf` covers CEE **8.x** while the rpm is
   **9.2.0.0**. Config and security semantics diverged (secure defaults).
   Treat it as a general reference, cross-check anything config-related.

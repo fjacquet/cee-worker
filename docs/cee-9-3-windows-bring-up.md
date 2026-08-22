@@ -15,6 +15,16 @@ path.** OneFS speaks CEPA directly to cee-exporter. CEE 9.3 rejects the same
 cluster's heartbeat outright. PowerStore remains unproven and, since being
 repointed, has stopped heartbeating any CEE host at all.
 
+> **Superseded — read `cepa-2026-08-22-powerstore-session.md` instead.** A
+> draft of this note claimed the `CEPP_NOT_FOUND` was caused by `cee-exporter`
+> answering CEE's registration with an empty body. That was disproved the next
+> day by a control: pointing CEE at a dead endpoint produces the identical
+> `0x16`. The consumer leg is not the cause. The `CHECK$` lead this document
+> ends on is NOT it either — CEE never opens that share. **The cause was CEE's
+> partner allowlist; solved 2026-08-22.**
+>
+> Several host facts below are also stale; the newer document lists them.
+
 ## CEE serves `/vee`; OneFS posts to `/`
 
 **Corrected later the same day.** This section first concluded that CEE 9.3
@@ -175,8 +185,20 @@ should be stated rather than discovered later.
 
 - **Domain membership.** Dell: "The Windows network must contain a domain
   controller with both Active Directory and DNS enabled" (*CEE on Windows
-  Platforms* 9.x rev 24, p7). `win25` is `WORKGROUP` —
-  `Win32_ComputerSystem.PartOfDomain` is `False`.
+  Platforms* 9.x rev 24, p7). On 2026-08-14 `win25` was `WORKGROUP` —
+  `Win32_ComputerSystem.PartOfDomain` was `False`.
+
+  > **No longer true. Re-measured 2026-08-22:** `PartOfDomain: True`,
+  > `Domain: diab.local`, `DomainRole: 3` (member server), domain controller
+  > reachable. The host was joined at some point after this document was
+  > written, and the gap is closed.
+  >
+  > Worth noting how long this stale line survived: the *same section* of this
+  > document records both CEE services running as `DIAB\Administrator`, which
+  > is a domain account and cannot coexist with a workgroup host. The
+  > contradiction sat in one file, unremarked, and was later cited as fact in
+  > a diagnosis. **Re-measure host facts before building on them; a bring-up
+  > document records one day, it does not describe the present.**
 - **Service account.** The guide's "Complete the CEE installation for Windows
   Server" (pp11–12) makes it a required step to set the **EMC CAVA** service to
   log on as a domain account with rights to set up CAVA *and CEPA* server
@@ -385,30 +407,168 @@ So a **Linux consumer can never be a direct CEPA target for this array**. That
 is architectural, not configuration. Any consumer replacing CEE for PowerStore
 would have to run on Windows and serve Microsoft RPC.
 
-### Where it was left
+### Where it was left, and why that reading was wrong
 
-CEE answers `CEPP_NOT_FOUND`, CEE cannot be bypassed, and escalation to Dell
-was ruled out. That leaves exactly one lever: the authorization CEE lacks on
-the NAS server.
+This section originally concluded: "CEE answers `CEPP_NOT_FOUND`, CEE cannot be
+bypassed, and escalation to Dell was ruled out. That leaves exactly one lever:
+the authorization CEE lacks on the NAS server." The `CHECK$` access-denied
+result was read as the missing **EMC virus-checking right**, made to look
+stronger by the mandatory-RPC finding — the whole PowerStore↔CEE path is
+Windows-authenticated, so an authorization gap seemed to fit.
 
-The mandatory-RPC finding makes the CHECK$ evidence considerably stronger than
-it looked in isolation. The whole PowerStore↔CEE path is Windows-authenticated,
-not merely HTTP — the array demands RPC — and the account CEE runs as
-(`DIAB\Administrator`) gets **access denied** on both
-`\\nas01.diab.local\CHECK$` and `net view \\nas01.diab.local`. The CEE host has
-no administrative standing on the NAS server at all, in a topology that
-requires Windows authentication end to end.
+It does not fit, and the reasoning is worth keeping because it is a good
+example of a plausible lead crowding out an unexamined assumption. CEE never
+reaches the point of needing any authorization on the NAS server: it refuses
+the array before that, because it has no registered consumer to hand the events
+to. See the next section.
 
-Granting the **EMC virus-checking right** is therefore not an antivirus detail
-to be skipped. It is the authorization leg of the only topology this array
-supports, and the naming is misleading in exactly the way the rest of CEE is:
-the CEPA listener is a service called `EMC Checker Server` displayed as "EMC
-CAVA", and the install-completion step says the account needs rights to set up
-"CAVA **and CEPA** server accounts".
+The two documented gaps against the vendor guide — workgroup membership and the
+service account — remain real and remain unaddressed. They are simply not what
+produced `0x16`. Granting the EMC virus-checking right (PowerStore side: NAS01 →
+Security & Events → Antivirus, or the Dell NAS Management snap-in, which is
+**not** installed on win25) is still worth doing before calling the deployment
+finished; it is no longer the blocking item.
 
-It is configured on the PowerStore side (NAS01 → Security & Events →
-Antivirus), or through the Dell NAS Management snap-in, which is **not**
-installed on win25 — only `EMC Common Event Enabler 9.3.0.0` is.
+## What CEE requires of an HTTP consumer
+
+*(This section was titled "Why CEE answered CEPP_NOT_FOUND". It is not why —
+see `cepa-2026-08-22-powerstore-session.md`. What it establishes about the
+consumer contract is still correct and still worth honouring; the causal claim
+was wrong.)*
+
+Found 2026-08-21, from the vendored CEE 9.2.0.0 rpm rather than from the wire.
+The Windows build writes no log at all and Dell publishes no protocol
+specification, so `bin/emc_cee_RHEL-9.2.0.0.x86_64.rpm` is the only readable
+description of the CEPA consumer contract available. Its `.so` files and the
+Windows DLLs are built from one source.
+
+**`cee-exporter` answered CEE's registration with an empty body, so CEE never
+registered it.** From `CEndPoint::Init()` in `libCEPPFilter.so`:
+
+```
+Top node is not RegisterResponse. Fail: %d.
+Incomplete XML. Required Name or FriendlyName not present
+Incomplete XML. Required description not present
+Guid or FriendlyName not specified.
+```
+
+CEE parses the consumer's reply into a `CRegisterResponse` object and takes
+from it the partner identity and the per-protocol event filter. An empty body
+has no root element, so the parse fails every time. This document previously read the 10-second `<RegisterRequest />` cadence as a
+keepalive; the first draft of this section read it as the opposite, a handshake
+retried because it never completed. **Both readings are wrong — see "The
+re-registration cadence is not a signal" below.**
+
+The required shape is CEE's own, the literal it carries for its built-in
+SplunkHEC proxy (`libCEPPAPIWrapper.so`):
+
+```xml
+<RegisterResponse>   <EndPoint friendlyName="SplunkHEC"
+  guid="0fce0c69-ef49-4362-bae9-180ef0bf97c2" version="1.0"
+  desc="Dell EMC SplunkHEC Proxy" />    <Filter protocol="0,1">
+  <EventTypeFilter value="0xFFFFFFFF0000000000000000" />
+  </Filter></RegisterResponse>
+```
+
+Protocol codes come from CEE's `ProtocolDesc` table: **0=CIFS, 1=NFS, 2=FTP,
+3=Unknown**. The `EventTypeFilter` value is 24 hex digits — three 32-bit words,
+one per event phase (pre, post-success, post-failure), matching
+`CEPPEventTable`'s 28 slots × 3 flags. Which word is which phase is **not**
+established; registering with every bit set sidesteps it.
+
+A chain was drawn from this to the array's `0x16`. **It does not hold** — the
+control on 2026-08-22 (dead endpoint, identical `0x16`) breaks the second link.
+Fixing the registration is necessary for a consumer to ever receive events; it
+is not sufficient, and it was not this fault.
+
+Note the corroboration in Dell KB 000052027, *"CEE is not working due to CEPP
+Server state ERROR_CEPP_NOT_FOUND"* — the same state, named as a CEE-side
+condition rather than an array one.
+
+### What this retires
+
+- ~~The `CHECK$` lead.~~ **Wrong, and reinstated.** With every other candidate
+  eliminated on 2026-08-22, `CHECK$` is the lead still standing.
+- "Whether this is a 9.3 regression." It is not version-specific: 9.2 on SLES
+  answered the same way, for the same reason.
+- The theory that the array's silence was array-side event generation
+  (`cepa-bring-up-findings.md`, "That leaves event generation on the array. It
+  is a Dell support case"). The array generates the events correctly and
+  discards them because CEE told it there was nowhere to send them.
+
+### What it does not establish
+
+The fix is implemented in `cee-exporter` and unit-tested, **but no array has
+confirmed it.** The strings are from 9.2.0.0 while win25 runs 9.3.0.0; the
+`CRegisterResponse` contract is very unlikely to have changed, but that is an
+inference. Confirm in this order, each a distinct observable:
+
+1. **The array's heartbeat reply turns `0x16` → `0x0`.** This is the only
+   discriminator known to work, and it needs PowerStore heartbeating win25
+   again — nothing is currently connected to 12228, measured with
+   `Get-NetTCPConnection -LocalPort 12228`, which shows the listener and no
+   peer.
+2. A `touch` on an Events-Publishing-enabled export then produces a
+   `<CheckEventRequest>` on the wire. Confirm the file was actually created
+   before trusting a negative.
+3. Then re-arm `cee_access_list_enabled: 1` (contents are already correct) and
+   set `cee_debug`/`cee_verbose` back to `0`.
+
+Two checks that look obvious and do **not** work are recorded in the next two
+sections, so nobody spends an afternoon on them.
+
+### The re-registration cadence is not a signal
+
+**Measured 2026-08-21, and it retires the check this section originally
+proposed.** Three identical CEE 9.2.0.0 instances were pointed at three mock
+consumers differing only in what they returned to `<RegisterRequest />`:
+
+| Consumer reply | CEE's behaviour |
+|---|---|
+| A valid `<RegisterResponse>` | `PUT /` `<RegisterRequest />` every 10 s |
+| An empty body | `PUT /` `<RegisterRequest />` every 10 s |
+| Malformed, non-XML garbage | `PUT /` `<RegisterRequest />` every 10 s |
+
+Identical in all three. CEE never sent `<HeartBeatRequest />`, never changed
+cadence, never gave up. So "CEE keeps re-registering" says nothing at all about
+whether the registration was accepted — it is simply what CEE does over HTTP,
+plausibly because the transport is stateless and it re-registers each cycle.
+
+This cuts both ways and should be stated as such: it removes the evidence that
+the empty body was *failing*, while leaving the evidence that an empty body
+*cannot* satisfy `CEndPoint::Init()` untouched, because that comes from the
+code rather than from behaviour.
+
+### CEE logs nothing about its consumer leg, even at Debug=1 Verbose=1
+
+Also measured 2026-08-21, against CEE 9.2.0.0 on Linux, where the first
+bring-up established that `Debug`/`Verbose` are what make CEE speak at all.
+They do not extend to this leg. With both set to 1 and the banner confirming
+`Verbose : 1` / `Debug : 1`, CEE printed its startup banner, then
+`CLinuxCore::Run(): Running service`, then **nothing** — while demonstrably
+PUTting a registration every 10 seconds and answering inbound heartbeats. No
+`CEndPoint::Init()` line, no `CTransport+::` line, `/opt/CEEPack/logs/` empty.
+
+So the plan of "debug it on Linux where CEE talks, then apply to Windows" does
+not work for this question. Linux CEE is as silent as Windows CEE here.
+
+One practical trap found on the way: CEE's stdout is block-buffered when it is
+a pipe, so `docker run -d` without a TTY shows an empty `docker logs` until the
+process exits. Run it with `-it`, or conclude nothing from the silence.
+
+### Replaying a captured heartbeat does not reach the CEPP lookup
+
+The obvious way to get the `0x16`/`0x0` answer without an array is to replay
+NAS01's captured heartbeat at CEE directly. It does not work: every replay is
+answered `status="0x10"`, which `libSourceAPIWrapper.so` names
+`VC_ERROR_BAD_REQUEST` (*"evtcxt init failed"*). CEE rejects the request before
+it ever looks for a CEPP configuration, so the reply is the same whether a
+consumer is registered or not.
+
+Varying `celerraIP` to match the real source address changed nothing. This is
+the same trap this document already records for the OneFS replay, and it has
+now cost two attempts: **a replayed CEPA request is not a substitute for array
+traffic.**
 
 ## State left behind
 

@@ -20,3 +20,11 @@ format = "text"
 [metrics]
 enabled = true
 addr    = "0.0.0.0:9228"
+
+# CEPA registration. Bring-up experiment 2026-08-22: CEE 9.3 still answers the
+# array 0x16 (CEPP_NOT_FOUND) with the all-bits filter, so try CEE's own
+# SplunkHEC template value verbatim before assuming the shape is wrong.
+[cepa]
+friendly_name = "PeerSoftwareCollector"
+guid          = "49f4da0f-055f-401c-9f83-a95ce61447f6"
+event_filter  = "0xFFFFFFFF0000000000000000"
