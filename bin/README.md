@@ -40,6 +40,35 @@ releases at once and each host selects its own.
 The i386 SLES build Dell also ships will not match — every supported glob ends
 in `.x86_64.rpm`.
 
+## Checking out an older commit empties this directory
+
+Read this before you `git checkout` anything older than `v9.2.0.4`.
+
+The artefacts *were* tracked until that release. Git removes a file that is
+tracked in the commit you are leaving and absent from the one you are entering,
+and `.gitignore` does not protect a file git is deleting — it only stops new
+ones being added. So moving back to an older commit restores them, and coming
+forward again **deletes them**, silently, with no prompt. Measured, not
+theorised: it happened during the v9.2.0.4 release itself.
+
+Nothing is lost when it does. Both rpms are recoverable from the repo:
+
+```bash
+git show v9.2.0.3:bin/emc_cee_RHEL-9.2.0.0.x86_64.rpm \
+  > bin/emc_cee_RHEL-9.2.0.0.x86_64.rpm
+git show v9.2.0.3:bin/emc_cee_SLES-9.2.0.0.x86_64.rpm | git lfs smudge \
+  > bin/emc_cee_SLES-9.2.0.0.x86_64.rpm
+file bin/*            # both must report RPM v3.0, never "ASCII text"
+```
+
+The RHEL rpm is an ordinary blob in history, so `git show` yields it directly.
+The SLES rpm is an LFS pointer, hence the `git lfs smudge`; that needs the LFS
+object, which comes from the local store or the remote. The Windows exe is the
+same, and its object is 91 MB, so expect a download.
+
+Verified against the RHEL rpm's SHA-256:
+`cae1a65c9313d6644f3357e067e36d9f4a36a5f7824c6a17766c085ead6230ae`.
+
 ## It is also the protocol reference
 
 Keep the RHEL rpm even if you only deploy Windows. Dell publishes no CEPA

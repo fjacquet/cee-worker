@@ -10,6 +10,28 @@ Dell CEE build and the useful version to know is CEE's own.
 
 ## [Unreleased]
 
+### Changed
+
+- `publish.yml` runs on `workflow_dispatch` only. It fired on every `v*` tag
+  and, since the Dell artefacts left the repo in 9.2.0.4, failed at its guard
+  step every time — v9.2.0.4 carries one such run. A permanently red check on
+  every release teaches people to ignore red, so the trigger is gone and the
+  job is manual, from a machine whose `bin/` holds the rpm.
+- The GHCR package was deleted rather than left frozen. Its newest image
+  predated the partner-allowlist fix, so anything pulled from it could not
+  publish events — a wrong answer that stayed available and silent.
+
+### Added
+
+- `scripts/check.sh` — everything CI checks, in CI's order, in one command.
+  The four checks were separate remembered commands, which is how 9.2.0.3 was
+  cut on a machine where `yamllint` and `ansible-lint` had not been run.
+- `bin/README.md` documents that checking out a commit older than v9.2.0.4
+  and returning **deletes** the artefacts — git removes files tracked there
+  and absent here, and `.gitignore` does not protect a file git is deleting.
+  Both rpms are recoverable from the repo; the commands are in that file and
+  were verified against the RHEL rpm's SHA-256.
+
 ## [9.2.0.4] - 2026-08-22
 
 **The event path works end to end for the first time.** SMB activity on a

@@ -1,9 +1,19 @@
+---
 name: Publish to GHCR
 
+# Manual only, deliberately. This used to run on every `v*` tag, but the Dell
+# artefacts left the repo in v9.2.0.4 (see bin/README.md), so a stock runner
+# has no rpm to build from and the job fails at its guard step. Tagging a
+# release is not the moment to discover that: v9.2.0.4 carries a red run for
+# exactly this reason, and leaving the trigger in place would have made every
+# future release carry one too — a permanently red check that teaches people
+# to ignore red.
+#
+# Run it by hand from a runner whose bin/ holds the rpm. Nothing else in the
+# repo depends on it: the container is a lab sandbox, unsupported by Dell,
+# RHEL-only, and it never carried a working end-to-end event path. The
+# supported path is ansible/.
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch: {}
 
 env:
