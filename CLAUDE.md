@@ -28,7 +28,11 @@ the recommended route.
 ## Commands
 
 ```bash
-# Ansible test suite — six localhost playbooks, no VM, no network
+# Everything CI checks, in CI's order, in one command. Prefer this.
+./scripts/check.sh
+./scripts/check.sh --deps        # same, installing the galaxy collections first
+
+# Ansible test suite — seven localhost playbooks, no VM, no network
 ansible/tests/run.sh
 ansible-playbook ansible/tests/test_endpoint_validation.yml   # single test
 
@@ -373,8 +377,19 @@ for current facts:
   **9.2.0.0**. Config and security semantics diverged (secure defaults).
   Treat it as a general reference, cross-check anything config-related —
   against the 9.x guide above where the topic is not Linux-specific.
-- Versioning tracks the CEE release (`vX.Y.Z.W`), not SemVer. Pushing a
-  `v*` tag publishes to GHCR via `.github/workflows/publish.yml`.
+- Versioning tracks the CEE release (`vX.Y.Z.W`), not SemVer. A `v*` tag no
+  longer publishes anything: `publish.yml` is `workflow_dispatch`-only since
+  v9.2.0.4, because the Dell rpm it builds from left the repo and a stock
+  runner cannot supply it. Run it by hand from a machine with `bin/`
+  populated, or don't — the container is a lab sandbox and the GHCR package
+  was deleted rather than left frozen at a build that predates the
+  partner-allowlist fix.
+- **One branch per PR. Never reuse a merged branch.**
+  `docs/cepa-bring-up-findings` was merged in PR #5 and then kept receiving
+  commits; by PR #6 it had never seen main's four newer commits and collided
+  on five files, two of which main and the branch had solved the same problem
+  in two different ways. Cut a fresh branch from `main` each time and delete
+  it on merge.
 - `CHANGELOG.md` follows Keep a Changelog; commits are conventional
   (`fix(ansible): …`).
 - Gitignored because they hold site addresses:
