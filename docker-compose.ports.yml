@@ -19,8 +19,11 @@
 # Pass it explicitly, and name the service:
 #   docker compose -f docker-compose.test.yml -f docker-compose.ports.yml up -d cee-exporter
 #
-# `!override` needs Compose v2.24 or newer; on an older one the two port lists
-# merge instead and 12228 is published twice.
+# `!override` needs Compose v2.24.4 or newer; on an older one the two port
+# lists merge instead and 12228 is published twice. The exact floor matters
+# because v2.24.0 through v2.24.3 look close enough to work and do not: the
+# tag was added in compose-go v2.0.0-rc.3, and Compose only bundled that from
+# v2.24.4 (v2.24.0 shipped beta.3, .1 rc.1, .2 rc.2).
 services:
   cee-exporter:
     ports: !override

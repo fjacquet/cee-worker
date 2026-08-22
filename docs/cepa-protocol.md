@@ -12,9 +12,13 @@ not need them to operate the thing.
 
 ## The two legs
 
-```
-PowerStore NAS server ──(1)──▶ CEE ──(2)──▶ consumer (cee-exporter)
-        NAS01                win25:12228        10.26.1.221:12229
+```mermaid
+flowchart LR
+    A["PowerStore NAS server<br/>NAS01"]
+    B["CEE<br/>win25:12228"]
+    C["consumer — cee-exporter<br/>10.26.1.221:12229"]
+    A -- "(1) inbound" --> B
+    B -- "(2) outbound" --> C
 ```
 
 **Leg 1, inbound.** The array opens a short-lived TCP session to CEE every
@@ -32,7 +36,7 @@ that looks entirely array-side is usually the consumer leg.*
 
 ## Leg 1 — what the array sends and CEE answers
 
-```
+```http
 POST /vee HTTP/1.1
 Host: win25.diab.local:12228
 User-Agent: EMC Data Mover
@@ -105,7 +109,7 @@ is why that status is so uninformative on its own.
 
 ### Gate 1 — the endpoint must be reachable and correctly formed
 
-```
+```text
 HKLM\SOFTWARE\EMC\CEE\CEPP\Audit\Configuration
   Enabled  = 1
   EndPoint = <partner-id>@http://<consumer-host>:<port>
@@ -257,7 +261,7 @@ may need whatever Dell KB 000022982 describes. **Debug the protocol on Linux.**
 
 ### `GET /vee` — CEE's own status document
 
-```
+```http
 GET /vee  ->  <CEE version="9.3.0.0"></CEE>
 ```
 

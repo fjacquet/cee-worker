@@ -108,8 +108,10 @@ Windows: `dbgcapture.ps1` or Sysinternals DebugView, since CEE writes to
 `state/` evidence directory, so a fresh clone does not have it). Within one
 10-second cycle you want:
 
-    CEPPAPIWrapper[Audit][<name>][http://…]::Register(): Exit rpcStatus: 0, NtStatus: 0
-    CEPPAPIWrapper[Audit][<name>][http://…]::HeartBeat(): Response: HB Status: 0 - CEPP_SERVICE_ONLINE
+```text
+CEPPAPIWrapper[Audit][<name>][http://…]::Register(): Exit rpcStatus: 0, NtStatus: 0
+CEPPAPIWrapper[Audit][<name>][http://…]::HeartBeat(): Response: HB Status: 0 - CEPP_SERVICE_ONLINE
+```
 
 Anything else is a gate in `cepa-protocol.md` you have not passed:
 
@@ -235,8 +237,10 @@ it in one command and also prints the array's own missed-event counters (it
 lives in `state/cepa-evidence-2026-08-22/`, which `.gitignore` excludes — see
 the note in `cepa-protocol.md`; a fresh clone does not have it):
 
-    CEE answered: {'0x0 SUCCESS': 4}
-    postSuccessEventsMissed: 0
+```text
+CEE answered: {'0x0 SUCCESS': 4}
+postSuccessEventsMissed: 0
+```
 
 `0x16` means CEE has no registered partner — go back to Stage 0; nothing on the
 array will fix it. Counters *climbing* mean the array is healthy and generating
@@ -353,7 +357,9 @@ this order, cheapest first:
    above 63 overflow and read as 0. Set `cee_debug: 63` and
    `cee_verbose: 63`, re-run the playbook, then:
 
-       journalctl -u emc_cee --since "-10min"
+   ```bash
+   journalctl -u emc_cee --since "-10min"
+   ```
 
    Set both back to `0` afterwards — they are diagnostic, not a steady-state
    setting.

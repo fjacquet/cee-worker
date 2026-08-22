@@ -42,7 +42,7 @@ dès qu'il a été redémarré pendant l'écoute.
 
 **La requête, verbatim :**
 
-```
+```http
 PUT / HTTP/1.1
 Host: <endpoint host>:<endpoint port>
 Accept: text/xml
@@ -73,7 +73,7 @@ CEE analyse la réponse et la refuse si elle n'a pas de nœud racine. Les
 messages d'erreur de `CEndPoint::Init()`, extraits de `libCEPPFilter.so`
 dans le rpm CEE 9.2.0.0 versionné sous `bin/` :
 
-```
+```text
 Top node is not RegisterResponse. Fail: %d.
 Incomplete XML. Required Name or FriendlyName not present
 Incomplete XML. Required description not present

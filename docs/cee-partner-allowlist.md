@@ -7,7 +7,7 @@ Dell CEE will not register a consumer whose identity it does not already know.
 **(friendlyName, facility)** and yielding a GUID. `CBaseClient::ValidateResponse()`
 looks the pair up with `CGuidStore::FindPairedGuid()` and rejects anything else:
 
-```
+```text
 Partner error, unknown or invalid GUID; Partner Provided FriendlyName: … Guid: …
 Partner error. GUID mismatch;          Partner Provided FriendlyName: … Guid: …
 ```
