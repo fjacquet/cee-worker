@@ -12,15 +12,54 @@ Dell CEE build and the useful version to know is CEE's own.
 
 ### Added
 
-- `docs/cepa-bring-up-findings.md` — what the first bring-up against real
-  arrays actually measured, from `epg` driving `cee-sles01` with a
-  PowerStore (NAS01) and a 4-node PowerScale in the loop. Stage 3 of the
-  runbook remains unproven: no array-originated event has reached the
-  consumer. What changed is that the failure is localised — every leg this
-  repo controls is verified working, and the remainder is array-side event
-  generation.
+- `docs/cepa-protocol.md` — the working reference for the CEE event path:
+  both legs, the four gates a consumer must pass, the status-code table,
+  the encoding rules, the diagnostic toolkit and a failure-signature →
+  cause table. Read this rather than the dated session documents.
+- `docs/cee-partner-allowlist.md` — the 47 identities CEE will register,
+  by facility, with GUIDs, extracted from `CGuidStore` in the vendored
+  rpm and cross-validated against Dell KB 000049515.
+- `[cepa]` identity block in `cee-exporter-config.toml`, and Step 0 /
+  Stage 0 in `docs/powerstore-setup-runbook.md` covering it.
+- Windows hosts can now target a CEE release that is not vendored in
+  `bin/`. `cee_windows_version` and `cee_windows_product_id` are a
+  required pair in `group_vars/cee_windows.yml`; `cee_install` skips
+  staging when the ProductCode is already registered and asserts the
+  registry `Version` against the targeted release either way. Gated by
+  `cee_preflight/tasks/assert_required_vars_windows.yml`, covered by
+  `ansible/tests/test_required_vars.yml`.
+- Optional `cee_windows_service_account` / `cee_windows_service_password`,
+  the vendor's install-completion step. `cee_configure` grants
+  `SeServiceLogonRight` before setting the account, because `win_service`
+  does not and the Services MMC does. Leaving both unset does not revert
+  a host configured by hand.
+- `docker-compose.ports.yml` — publishes cee-exporter on 12228 as well as
+  12229, so an array can use the CEPA default port.
+- `docs/cepa-bring-up-findings.md`, `docs/cee-9-3-windows-bring-up.md` and
+  `docs/cepa-2026-08-22-powerstore-session.md` — the session record of the
+  three bring-ups, wrong turns included. `docs/cepa-next-steps.md` is the
+  transient handover; delete it when its open items close.
+- `docs/cee-9-x-windows-guide_en-us.pdf` — the 9.x Windows guide, the
+  source for the AccessList and service-account rules cited above. The
+  8.x Linux guide stays as a general reference only.
 
 ### Fixed
+
+- **CEE refuses to register a consumer whose identity it does not already
+  know**, which is what produced `0x16 CEPP_NOT_FOUND` across three
+  bring-ups. `CGuidStore` maps *(friendlyName, facility)* → GUID and is
+  compiled into `libCEPPAPIWrapper.so`; a self-generated GUID can never
+  work. With `PeerSoftwareCollector` and its Audit GUID, PowerStore →
+  CEE → cee-exporter → `.evtx` runs end to end for the first time
+  (2026-08-22, verified by `Get-WinEvent` on Windows Server 2025).
+  `all.yml.example` no longer ships the invented `ceeexporter` name.
+- **`Debug`/`Verbose` are a 6-bit mask, not a scale.** `1` prints the
+  banner only and `9` prints less than `3`; `63` is the maximum and the
+  only level at which CEE names the reason it refused a partner. The
+  runbook's troubleshooting section said `1`.
+- **`docs/superpowers/specs/2026-08-10-cepa-wire-protocol.md` stated the
+  inverse of the truth** — "reply with an empty body" — and that error
+  cost two bring-ups. Corrected in place, with the original kept.
 
 - **The access list refuses every array when it holds IP addresses.**
   Measured against both PowerStore and PowerScale: with
@@ -37,9 +76,9 @@ Dell CEE build and the useful version to know is CEE's own.
   even for a successful exchange** — confirmed by capturing a healthy
   heartbeat on the wire and finding `-- No entries --` across that exact
   window. The runbook told operators to read the journal and to treat
-  silence as meaningful; it now says to enable `cee_debug` and
-  `cee_verbose` first. Every root cause found during bring-up came from
-  that switch and none was visible without it.
+  silence as meaningful; it now says to set `cee_debug` and `cee_verbose`
+  to 63 first. Every root cause found during bring-up came from that
+  switch and none was visible without it.
 
 ## [9.2.0.2] - 2026-08-11
 

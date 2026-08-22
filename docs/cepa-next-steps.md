@@ -19,7 +19,7 @@ CEPP_NOT_FOUND` and the array silently discards its events. Read
 ## The configuration that works
 
 ```toml
-# cee-exporter-config.toml (gitignored)
+# cee-exporter-config.toml (tracked — this is the repo's test-stack config)
 [cepa]
 friendly_name = "PeerSoftwareCollector"
 guid          = "49f4da0f-055f-401c-9f83-a95ce61447f6"
@@ -65,10 +65,19 @@ cee-worker    (docs/cepa-bring-up-findings)
   046fc4e  docs(cepa): CEPP_NOT_FOUND solved — CEE's compiled-in partner allowlist
 
 cee-exporter  (feat/onefs-cepa-handshake)
+  8457523  docs: ADR-017, the operator-guide gap, and CEPA-06..09
+  9070c5d  refactor(cepa): decode the body once, and share the reply path
   27a980d  docs: correct CEPA-01, which stated the inverse of the truth
   044264a  docs: the [cepa] identity block is required for Dell CEE
   309d277  feat(cepa): register with CEE and parse its events, end to end
 ```
+
+`9070c5d` is worth knowing about before you build on the parser: every
+`parser.Is*` predicate transcodes the whole body, so dispatching through four
+of them plus parsing decoded a UTF-16 payload five times per request — 62% of
+the time and 92% of the allocations on a 1000-event batch. `parser.Classify`
+now decodes once; the exported API is unchanged via wrappers. Prefer it over
+the individual predicates in any new dispatch code.
 
 Verified locally before handover: `go build`, `go vet`, `go test -race`
 (8 packages), `gofmt`, `golangci-lint` (0 issues), `go mod tidy -diff`, all four
@@ -111,12 +120,18 @@ is called production. Reproduce with `cepa_probe.sh 40`.
 
 ### 3. Get the identity into Ansible
 
-`cee_configure` writes `EndPoint` from `cee_endpoints[].name`. Set
-`name: PeerSoftwareCollector` in `ansible/group_vars/all.yml` (gitignored) and
-update `all.yml.example` to explain that the name is not free-form — it must be
-an allowlisted partner id for the enabled facility, or CEE refuses and the array
-publishes nothing. Consider a `cee_common` gate that rejects a name absent from
-the allowlist, which would have caught this in 2026-08-12.
+`cee_configure` writes `EndPoint` from `cee_endpoints[].name`.
+
+Done: `all.yml.example` now ships `name: PeerSoftwareCollector` and explains
+that the name is not free-form — it must be an allowlisted partner id for the
+enabled facility, or CEE refuses and the array publishes nothing.
+
+Still open: set the same name in `ansible/group_vars/all.yml` on each
+controller (gitignored, so the example cannot do it for you), and add a
+`cee_common` gate that rejects a name absent from the allowlist. The gate is
+the part that matters — a comment in an example file is not a guard, and this
+failure mode passes every check the repo currently has. It would have caught
+this in 2026-08-12.
 
 ### 4. Re-arm the access list
 
@@ -127,9 +142,9 @@ documented as the last step of the bring-up, not optional.
 ### 5. Reset diagnostics
 
 `cee_debug` / `cee_verbose` are `1` in `group_vars/all.yml`; win25's registry is
-back to `1`. Set both to `0` for steady state. Note `Debug=63` is the level that
-explains a refusal — worth a line in the runbook's troubleshooting section
-rather than losing it.
+back to `1`. Set both to `0` for steady state. (`Debug=63` being the level that
+explains a refusal is now recorded in the runbook's troubleshooting section and
+in `cepa-protocol.md`.)
 
 ### 6. Housekeeping
 

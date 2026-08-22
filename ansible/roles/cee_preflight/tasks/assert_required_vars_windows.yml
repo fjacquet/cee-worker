@@ -38,10 +38,11 @@
       cannot be checked against what the host reports. Known pairs are
       listed in the example file.
 
-# Optional, unlike the pair above — but a half-filled pair is not. An
-# account with no password reaches win_service as an undefined-variable
-# error deep in cee_configure, after the registry has already been
-# rewritten; naming it here means it fails before anything is touched.
+# Optional, unlike the pair above — but a half-filled pair is not, in
+# either direction. An account with no password reaches win_service as an
+# undefined-variable error deep in cee_configure, after the registry has
+# already been rewritten; naming it here means it fails before anything is
+# touched.
 - name: A CEE service account must come with a password
   ansible.builtin.assert:
     that:
@@ -56,3 +57,23 @@
       is gitignored, which is not the same as encrypted. Leave both unset
       to keep the service on whatever account it already has.
   when: cee_windows_service_account is defined
+
+# The mirror case, and the quieter of the two. cee_configure gates both of
+# its service-account tasks on cee_windows_service_account alone, so a
+# password with no account is not an error anywhere downstream — the play
+# simply skips the logon-account change and reports success, leaving the
+# service on whatever account it already had. An operator who vaulted a
+# password and mistyped the account variable name gets a green run and no
+# hint that the step they were configuring never happened.
+- name: A CEE service password must come with an account
+  ansible.builtin.assert:
+    that:
+      - cee_windows_service_account is defined
+    fail_msg: >-
+      cee_windows_service_password is defined but
+      cee_windows_service_account is not. cee_configure decides whether to
+      set the EMC CAVA service logon account from the account variable
+      alone, so this combination silently does nothing: the service keeps
+      the account it already had and the play still reports success. Set
+      both, or neither.
+  when: cee_windows_service_password is defined

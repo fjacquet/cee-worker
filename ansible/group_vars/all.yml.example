@@ -22,8 +22,29 @@ cee_https_port: 12443
 #
 # ORDER MATTERS: CEE monitors the first endpoint to decide whether to
 # publish at all. If the first one is down, no endpoint receives events.
+#
+# `name` IS NOT FREE-FORM. It is the partner id CEE registers the consumer
+# under, and CEE only registers identities present in `CGuidStore`, a table
+# of 47 (friendlyName, facility) → GUID rows compiled into
+# libCEPPAPIWrapper.so. Pick a row whose facility is the one enabled below
+# (Audit), and set the same name — and its paired GUID — on the consumer:
+#
+#   cee-exporter-config.toml
+#     [cepa]
+#     friendly_name = "PeerSoftwareCollector"
+#     guid          = "49f4da0f-055f-401c-9f83-a95ce61447f6"
+#
+# An invented name (this file used to ship `ceeexporter`) is refused with
+# `Partner error, unknown or invalid GUID`, no partner is registered, and
+# CEE then answers every array heartbeat `0x16 CEPP_NOT_FOUND` — the array
+# discards every event it generates while the playbook, the service, the
+# port and the firewall all report healthy. That cost three bring-ups. The
+# full table, its provenance and the caveat about using another vendor's
+# registered identity are in docs/cee-partner-allowlist.md.
 cee_endpoints:
-  - name: ceeexporter
+  - name: PeerSoftwareCollector   # must be an allowlisted partner id for
+                                  # the enabled facility, and must match
+                                  # friendly_name on the consumer
     host: 10.10.10.10     # the Docker host running cee-exporter
     port: 12229           # host-published port, maps to container 12228
 

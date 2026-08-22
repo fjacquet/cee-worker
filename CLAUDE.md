@@ -338,9 +338,14 @@ for current facts:
   Read its "Corrections to earlier documents" before trusting host facts in
   either bring-up document.
 
+- `docs/cee-9-x-windows-guide_en-us.pdf` is *Using the Common Event Enabler
+  on Windows Platforms* 9.x rev 24 — the vendor guide matching the deployed
+  line, and the source for the AccessList-holds-FQDNs rule and the
+  service-account install-completion step. Cite page numbers from it.
 - `docs/cee-8-x-linux-guide_en-us.pdf` covers CEE **8.x** while the rpm is
   **9.2.0.0**. Config and security semantics diverged (secure defaults).
-  Treat it as a general reference, cross-check anything config-related.
+  Treat it as a general reference, cross-check anything config-related —
+  against the 9.x guide above where the topic is not Linux-specific.
 - Versioning tracks the CEE release (`vX.Y.Z.W`), not SemVer. Pushing a
   `v*` tag publishes to GHCR via `.github/workflows/publish.yml`.
 - `CHANGELOG.md` follows Keep a Changelog; commits are conventional

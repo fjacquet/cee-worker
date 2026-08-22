@@ -134,7 +134,9 @@
 # CEE in its name, and it is NOT the one that serves events; managing it
 # here would report Running while the port stayed dead — precisely the
 # silent success this repo exists to prevent. Do not "correct" this to
-# the more obvious-looking service name.
+# the more obvious-looking service name. That applies to all three of the
+# tasks below, which all drive EMC Checker Server.
+
 # The vendor's "Complete the CEE installation for Windows Server" step
 # (Using the Common Event Enabler on Windows Platforms 9.x rev 24, pp11-12):
 # the EMC CAVA service must log on as a domain account holding the rights to
@@ -171,6 +173,10 @@
   no_log: true
   notify: Restart emc_cee
 
+# Last, so the two tasks above have already settled which account the
+# service will use. The credentials only take effect on a restart, which
+# the notified handler performs — cee_verify flushes handlers before it
+# checks anything.
 - name: Enable and start CEE
   ansible.windows.win_service:
     name: EMC Checker Server

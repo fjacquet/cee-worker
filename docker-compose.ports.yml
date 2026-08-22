@@ -6,11 +6,21 @@
 # runs on its own VM (win25), so 12228 is free here — but 12229 is kept so
 # nothing already pointed at it breaks.
 #
+# THE SERVICE ARGUMENT IS NOT OPTIONAL. docker-compose.test.yml still defines a
+# `cee` service publishing 12228:12228 — the containerised CEE this file assumes
+# is gone. Bringing the whole stack up with this overlay makes both containers
+# claim host 12228 and the second to start dies with "port is already
+# allocated". Scope every invocation to the exporter, or drop the `cee` service
+# from the stack first.
+#
 # Deliberately NOT named docker-compose.override.yml: that filename is
 # auto-loaded by every `docker compose` invocation in this directory, including
 # ones targeting docker-compose.yml, where these services do not exist.
-# Pass it explicitly:
+# Pass it explicitly, and name the service:
 #   docker compose -f docker-compose.test.yml -f docker-compose.ports.yml up -d cee-exporter
+#
+# `!override` needs Compose v2.24 or newer; on an older one the two port lists
+# merge instead and 12228 is published twice.
 services:
   cee-exporter:
     ports: !override

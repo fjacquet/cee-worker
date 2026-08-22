@@ -280,10 +280,15 @@
       ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_windows.yml
 
 # The service account is optional, so the gate has to distinguish "absent"
-# from "half-filled". Both directions are covered: omitting it entirely must
-# pass (the common case — the service keeps whatever account it has), and
+# from "half-filled". All three directions are covered: omitting it entirely
+# must pass (the common case — the service keeps whatever account it has),
 # naming an account without a password must fail before cee_configure
-# rewrites the registry.
+# rewrites the registry, and a password without an account must fail too —
+# that half does not error anywhere downstream, it just silently skips the
+# step the operator was configuring.
+#
+# The "complete pair passes" case is already covered by the play above, which
+# defines the version pair and no service account at all.
 - name: A service account without a password is rejected on Windows
   hosts: localhost
   connection: local
@@ -307,13 +312,25 @@
               - "'vault' in (ansible_failed_result.msg | default('') | string)"
             fail_msg: "Failed, but not with the service-account password message."
 
-- name: An omitted service account passes the Windows gate
+- name: A service password without an account is rejected on Windows
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     cee_windows_version: 9.3.0.0
     cee_windows_product_id: '{149370D4-461B-43D1-9D8E-71FCBA58A618}'
+    cee_windows_service_password: hunter2
   tasks:
-    - name: Assert the Windows-only variables
-      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_windows.yml
+    - name: Expect the Windows-only variable gate to fail
+      block:
+        - name: Assert the Windows-only variables
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_windows.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation did not reject the missing cee_windows_service_account."
+      rescue:
+        - name: Confirm it failed for the orphaned-password reason
+          ansible.builtin.assert:
+            that:
+              - "'Set both, or neither' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the orphaned service-password message."

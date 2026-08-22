@@ -103,8 +103,10 @@ than `3`):
     # Windows: HKLM\SOFTWARE\EMC\CEE\Configuration\Debug = 63 (and Verbose)
 
 restart the CEE service, and read its trace (Linux: `journalctl -u emc_cee`;
-Windows: `dbgcapture.ps1`, since CEE writes to `OutputDebugString` rather than
-the event log). Within one 10-second cycle you want:
+Windows: `dbgcapture.ps1` or Sysinternals DebugView, since CEE writes to
+`OutputDebugString` rather than the event log — the script is in the gitignored
+`state/` evidence directory, so a fresh clone does not have it). Within one
+10-second cycle you want:
 
     CEPPAPIWrapper[Audit][<name>][http://…]::Register(): Exit rpcStatus: 0, NtStatus: 0
     CEPPAPIWrapper[Audit][<name>][http://…]::HeartBeat(): Response: HB Status: 0 - CEPP_SERVICE_ONLINE
@@ -228,9 +230,10 @@ Common Stage 2 failures:
 ### Stage 3 — the PowerStore → CEE leg
 
 The authoritative check is the `status` attribute in CEE's reply to the array's
-heartbeat, which is the value the array itself acts on. `cepa_probe.sh` in
-`state/cepa-evidence-2026-08-22/` captures it in one command and also prints the
-array's own missed-event counters:
+heartbeat, which is the value the array itself acts on. `cepa_probe.sh` captures
+it in one command and also prints the array's own missed-event counters (it
+lives in `state/cepa-evidence-2026-08-22/`, which `.gitignore` excludes — see
+the note in `cepa-protocol.md`; a fresh clone does not have it):
 
     CEE answered: {'0x0 SUCCESS': 4}
     postSuccessEventsMissed: 0
@@ -337,14 +340,23 @@ this order, cheapest first:
    caveat that this removes a real access control, leaving the firewall as
    the only gate.
 
-   **Read the journal, but turn debug on first.** At the shipped
-   `Debug=0`/`Verbose=0`, CEE 9.2.0.0 writes *nothing* to the journal — not
-   even for a successful exchange, confirmed by capturing a healthy
-   heartbeat on the wire and finding `-- No entries --` across that exact
-   window. An empty journal is therefore not evidence that nothing arrived.
-   Set `cee_debug: 1` and `cee_verbose: 1`, re-run the playbook, then:
+   **Read the journal, but turn debug on first — and turn it up to 63.** At
+   the shipped `Debug=0`/`Verbose=0`, CEE 9.2.0.0 writes *nothing* to the
+   journal — not even for a successful exchange, confirmed by capturing a
+   healthy heartbeat on the wire and finding `-- No entries --` across that
+   exact window. An empty journal is therefore not evidence that nothing
+   arrived.
+
+   `Debug`/`Verbose` are a **6-bit mask, not a scale**: `1` prints the banner
+   and nothing else, `9` prints *less* than `3`, and `63` is the maximum and
+   the only level at which CEE names the reason it refused something. Values
+   above 63 overflow and read as 0. Set `cee_debug: 63` and
+   `cee_verbose: 63`, re-run the playbook, then:
 
        journalctl -u emc_cee --since "-10min"
+
+   Set both back to `0` afterwards — they are diagnostic, not a steady-state
+   setting.
 
 4. **The PowerStore side.** Recheck that Events Publishing is enabled on
    both the NAS server *and* the individual filesystem, that the protocol

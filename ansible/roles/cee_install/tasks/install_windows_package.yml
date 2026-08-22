@@ -6,9 +6,11 @@
 
 # The glob is derived from cee_windows_version rather than being a bare
 # EMC_CEE_Pack_x64_*.exe wildcard, so bin/ may hold more than one release
-# at a time and each host selects its own. The uniqueness assert stays:
-# with the version pinned into the pattern it now means "the installer
-# for the release this play targets is present, exactly once".
+# at a time and each host selects its own. With the version pinned in, the
+# pattern carries no wildcard at all, so the assert below is an existence
+# check rather than the uniqueness check the old bare glob needed — it is
+# still written as `length == 1` so the fileglob result feeds the same
+# `[0]` lookup, but "found 2" is no longer a reachable outcome.
 - name: Locate the bundled CEE installer
   ansible.builtin.set_fact:
     cee_install_exe_candidates: >-

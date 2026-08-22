@@ -190,7 +190,7 @@ Values above 63 overflow and are read as 0 — the banner will say `Debug: 0`.
 | platform | channel |
 |---|---|
 | Linux | stdout → journal (`journalctl -u emc_cee`), **block-buffered on a pipe** — run a container with `-it` or you see nothing until it exits |
-| Windows | `OutputDebugString` (`DBWIN_BUFFER`), *not* the event log — use `state/cepa-evidence-*/dbgcapture.ps1`, no download needed |
+| Windows | `OutputDebugString` (`DBWIN_BUFFER`), *not* the event log — attach with `dbgcapture.ps1` (see the note below) or Sysinternals DebugView |
 
 On Windows only the Monitor (`[EMC CEEM]`) was observed writing there;
 `CAVA.exe` stayed silent even at `Debug=3`. Getting the CEPA trace on Windows
@@ -207,11 +207,22 @@ GET /vee  ->  <CEE version="9.3.0.0"></CEE>
 observed so far, including working ones, so *do not* read an empty document as a
 fault — its usefulness is unconfirmed.
 
-### `cepa_probe.sh`
+### `cepa_probe.sh` and `dbgcapture.ps1`
 
-In `state/cepa-evidence-2026-08-22/`. One command, ~60 s: captures on the CEE
-host and prints CEE's `status`, the array's missed-event counters, and whether
-real events arrived. This is the instrument two bring-ups lacked.
+> **These do not travel with the repository.** They live in
+> `state/cepa-evidence-2026-08-22/`, and `.gitignore` excludes `state/*` because
+> that directory holds site addresses and packet captures. A fresh clone has
+> neither script; ask whoever ran the 2026-08-22 session for a copy, or rebuild
+> them from the description here. Do not read "it is in `state/`" as "it is in
+> the repo".
+
+`cepa_probe.sh`: one command, ~60 s. Captures on the CEE host and prints CEE's
+`status`, the array's missed-event counters, and whether real events arrived.
+This is the instrument two bring-ups lacked.
+
+`dbgcapture.ps1`: attaches to the Windows `DBWIN_BUFFER` channel and prints
+CEE's `OutputDebugString` trace, which is where the CEPA trace goes on Windows.
+Sysinternals DebugView does the same job if you do not have the script.
 
 `pktmon` writes nothing readable until `pktmon stop` flushes it — a running
 capture reports `Packets total: 0`, which looks exactly like a dead link.
