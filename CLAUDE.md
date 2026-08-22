@@ -363,8 +363,12 @@ for current facts:
 - `docs/cee-9-3-windows-bring-up.md` — second bring-up (CEE 9.3.0.0 on Windows
   Server 2025). The `pktmon` stop-before-reading trap, CEE serving `/vee` while
   OneFS posts to `/`, and the OneFS `eventType` table resolved in full. Its
-  claim that `Debug`/`Verbose` are inert on Windows is wrong twice over: the
-  channel is `OutputDebugString`, not the event log, and the level was too low.
+  claim that `Debug`/`Verbose` are inert on Windows is half wrong: the channel
+  is `OutputDebugString`, not the event log. But "the level was too low" does
+  not hold — re-measured 2026-08-22 on 9.2.0.0, `CAVA.exe` writes nothing at
+  `Debug=63` either, on any channel. The trace-level table in
+  `docs/cepa-protocol.md` is a Linux measurement and does not transfer. Debug
+  the protocol on Linux; the Windows host will not explain itself.
 - `docs/cepa-2026-08-22-powerstore-session.md` — **the session that solved it.**
   Read its "Corrections to earlier documents" before trusting host facts in
   either bring-up document.

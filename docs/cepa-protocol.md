@@ -259,6 +259,27 @@ On Windows only the Monitor (`[EMC CEEM]`) was observed writing there;
 `CAVA.exe` stayed silent even at `Debug=3`. Getting the CEPA trace on Windows
 may need whatever Dell KB 000022982 describes. **Debug the protocol on Linux.**
 
+Re-measured at the maximum on 2026-08-22, CEE **9.2.0.0**, Windows Server 2025,
+because "the level was too low" is the obvious rebuttal and it is wrong:
+
+- `Debug=63` and `Verbose=63` set on both `HKLM:\SOFTWARE\EMC\CEE\Configuration`
+  and `…\Monitor\Configuration` — the only two places either value exists on
+  the host — and both services restarted afterwards.
+- 150 s of `DBWIN_BUFFER` captured across several heartbeats and event
+  deliveries: 14 lines, of which the only CEE ones were two
+  `[EMC CEEM]: CEvtLogStore: EntryWritten` from the Monitor. Nothing from CAVA.
+- No file appeared either — nothing under `C:\Program Files\EMC`,
+  `C:\ProgramData` or `C:\Windows\Temp` was written in the window.
+- `CAVA.exe` was the right process and was running the new setting: pid 8872
+  owned the listener on 12228 *and* every outbound connection to the consumer,
+  with `CEPPAPIWrapper.dll`, `CEPPFilter.dll`, `EvtCxt.dll` and `Convert.dll`
+  loaded, started after the registry change.
+
+So the trace table above — the one measured by replaying a heartbeat at each
+level — is a **Linux** measurement, and does not transfer. On 9.2.0.0 Windows
+there is no level at which CAVA explains itself. The instruction stands
+unqualified: debug the protocol on Linux.
+
 ### `GET /vee` — CEE's own status document
 
 ```http
