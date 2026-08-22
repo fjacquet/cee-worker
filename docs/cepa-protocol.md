@@ -102,10 +102,12 @@ The same binary also settles the facility numbering, from
 5 Backup, 6 CARA, 11 VCAPS, 12 VCAPS+** (7–10 are `Unknown`). Audit is 2 — which
 is the number that matters, since it keys the partner allowlist.
 
-## Leg 2 — the four gates
+## Leg 2 — the five gates
 
-Every one of these must pass. Failing any of them yields `0x16` on leg 1, which
-is why that status is so uninformative on its own.
+Every one of these must pass. Failing gates 1–4 yields `0x16` on leg 1, which is
+why that status is so uninformative on its own. Gate 5 is different and worse:
+it passes every check on both legs, delivers events to the consumer, and still
+publishes nothing.
 
 ### Gate 1 — the endpoint must be reachable and correctly formed
 
@@ -161,7 +163,10 @@ string order): `0 ONLINE, 1 OFFLINE, 2 UNREGISTER, 3 REREGISTER, 4 UNKNOWN`.
 
 Miss this and registration succeeds but the array gets `0x12 OFFLINE`.
 
-*The separator between the two fields is not established* — `&` works.
+The separator between the two fields is `&`. This was a guess from the `xml=`
+form convention until it was tested against a live array on 2026-08-22: `&`
+gives `status="0x0"` on leg-1 heartbeats, and `\n` gives `0x12 OFFLINE` and the
+array stops publishing altogether. Do not "tidy" it.
 
 ### Gate 4 — encoding
 
@@ -172,6 +177,48 @@ request's encoding. Answering UTF-16 to a UTF-8 request gives
 
 OneFS sends UTF-8 and must be answered in UTF-8; PowerStore's own leg-1 traffic
 is UTF-8 despite earlier notes to the contrary.
+
+### Gate 5 — acknowledge the event batch with a document
+
+**A bare HTTP 200 is not an acknowledgement.** Answer `<CheckEventRequest>`
+with a body:
+
+```xml
+<CheckEventResponse status="0x0"/>
+```
+
+Miss this and the failure is total, silent, and looks like something else
+entirely. CEE reads the empty body as a failed delivery and reports it upstream
+as `CheckFileResponse status="0x1"` carrying `<EventResponse auditStatus="0x1"/>`.
+The array counts the batch missed and retries **the same event**, so its queue
+head never clears and nothing behind it is ever sent. Measured on this estate:
+one event from 2026-08-14 redelivered on every heartbeat for eight days, and no
+other event ever.
+
+Nothing in the consumer looks wrong while this happens. Registration succeeds,
+`<HeartBeatRequest />` is answered and returns `0x0`, events arrive and are
+written, and consumer-side counters climb. The only signal is on the array: a
+Major alert, `0x01301b03 all_servers_unreachable`, "all the publishing pools of
+the NAS server are unavailable" — which reads as a network fault, and is not
+one. The NAS was TCP-connected to CEE on 12228 throughout.
+
+Both sides of the comparison, on the wire, 2026-08-22:
+
+| Consumer reply to `<CheckEventRequest>` | Leg 1 | Result |
+|---|---|---|
+| empty body | `status="0x1"`, `auditStatus="0x1"` | `action="11"` retried 6× in 40 s; one distinct path ever seen |
+| `<CheckEventResponse status="0x0"/>` | `status="0x0"` | no retries; backlog flushed — 1780 events, 14 event types, 30 s |
+
+**This document cannot be found in the binaries, and looking for it will
+actively mislead you.** There is no `CheckEventResponse` literal in ASCII or
+UTF-16 in `CEPPAPIWrapper.dll`, `CEPPFilter.dll`, `EvtCxt.dll`, `Convert.dll` or
+`CAVA.exe`. That absence was read once as proof the empty 200 was the whole
+contract — it is not proof of anything. CEE matches on the parsed document, not
+on a stored template. Only the wire settles this.
+
+Note the asymmetry with gate 3: the heartbeat reply is a urlencoded form
+(`hbStatus=0&ntStatus=0`) and the event reply is XML. They are not the same
+shape and there is no reason to expect them to be.
 
 ## Events
 
@@ -320,6 +367,9 @@ Read cycle is stop → `etl2pcap` → restart.
 | `0x16` with a *dead* endpoint too | Expected; a dead endpoint and a rejected registration are indistinguishable. **Not** evidence the consumer leg is innocent |
 | `0x12` | Registered but not answering `<HeartBeatRequest />` — gate 3 |
 | `0x1` on heartbeats | Facility disabled, or source not valid/online |
+| `0x1` + `auditStatus="0x1"` on **events**, heartbeats still `0x0` | Consumer answered the batch with a bare 200 — gate 5. The array retries one event forever and never advances |
+| Array alert `0x01301b03 all_servers_unreachable`, but the NAS is TCP-connected to CEE | Gate 5. Not a network fault, despite the wording and the repair advice |
+| Exactly one event path, redelivered at the heartbeat interval, forever | Gate 5. The array's queue head cannot clear |
 | `0x10` | You are replaying a captured request; it never reaches the CEPP lookup |
 | `Substring guid not found` | Encoding mismatch — gate 4 |
 | `server [NAS01] event not allowed` | AccessList holds addresses; it matches **FQDNs** |

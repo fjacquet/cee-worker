@@ -235,6 +235,20 @@ that read it could not pass on any real host.
   uses `PeerSoftwareCollector` + `49f4da0f-055f-401c-9f83-a95ce61447f6`.
   Registering is still not enough — CEE then probes with `<HeartBeatRequest />`
   and needs `hbStatus=0`, or the partner stays OFFLINE and the array gets `0x12`.
+- **A bare HTTP 200 does not acknowledge an event batch.** `<CheckEventRequest>`
+  must be answered with `<CheckEventResponse status="0x0"/>`. CEE reads an empty
+  body as a failed delivery, tells the array `auditStatus="0x1"`, and the array
+  retries **the same event** forever — its queue head never clears and nothing
+  behind it is ever sent. Measured here as one event from 2026-08-14 redelivered
+  every heartbeat for eight days, with every consumer-side observable green:
+  registration fine, heartbeats `0x0`, events arriving, counters climbing. The
+  only signal was an array alert, `0x01301b03 all_servers_unreachable`, which
+  reads as a network fault and is not one. Fixing it flushed 1780 events across
+  14 event types in 30 seconds. **This is gate 5 in `docs/cepa-protocol.md` and
+  the single most consequential rule in the protocol.** Do not look for a
+  `CheckEventResponse` literal in CEE's binaries to confirm it — there is none,
+  in either encoding, in any of them; that absence was once read as proof the
+  empty 200 was correct. Only the wire settles this.
   `cee_common/tasks/assert_partner_identity.yml` enforces the name half of this
   (the 27 distinct Audit identities) before the playbook touches a host; it runs
   last in `cee_common` because checking only the Audit half is correct only once
