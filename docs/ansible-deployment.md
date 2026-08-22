@@ -30,17 +30,22 @@ See `docs/cee-partner-allowlist.md` and
   CEE will now terminate.`, unless they see the right product string.
   Windows **client** editions are rejected the same way `cee_preflight`
   rejects a Linux rebuild — Windows **Server** only.
-- **Git LFS on the control node.** `bin/*.rpm` and `bin/*.exe` are
-  tracked with Git LFS (see `.gitattributes`). Run
-  `git lfs install && git lfs pull` right after cloning. Skip it and the
-  SLES rpm (and the Windows exe) are ~130-byte pointer files, not the
-  real package — `cee_install`'s SLES and Windows branches will each find
-  exactly one file (the pointer passes the uniqueness check unaltered)
-  and hand it to `zypper` or `win_package`, which then fails confusingly
-  on a file that isn't a real rpm/exe. The RHEL rpm predates LFS in this
-  repo's history and stays a plain blob, so **this only bites the SLES
-  and Windows paths** — a RHEL-only clone can look fine while silently
-  missing the guard for the other two.
+- **The Dell installers on the control node.** They are **not** tracked in
+  this repo (see `bin/README.md`); a fresh clone has an empty `bin/`.
+  Download the CEE 9.2.0.0 artefacts for the platforms you deploy from
+  Dell's support portal and put them there, under the exact filenames the
+  globs expect.
+
+  Get this wrong and the failure is early and clear rather than silent:
+  `install_linux_locate.yml` asserts **exactly one** match for its
+  platform's glob and names the count it found. The one case that is *not*
+  clear is a leftover Git LFS pointer file — if you have an old clone whose
+  `bin/*.rpm` or `bin/*.exe` is a ~130-byte pointer rather than the real
+  package, it passes the uniqueness check unaltered and is handed to
+  `zypper` or `win_package`, which then fails confusingly on a file that is
+  not an rpm or an exe. Check with `file bin/*` before deploying; a real
+  artefact reports `RPM v3.0` or a PE executable, a pointer reports
+  `ASCII text`.
 - Time synchronised across the PowerStore array, the CEE host, and the
   consumer host
 - SMB configured on PowerStore; NFS optional

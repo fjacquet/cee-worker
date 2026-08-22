@@ -26,3 +26,9 @@
 
 - name: Assert the sub-facility selection is one CEE will actually publish
   ansible.builtin.include_tasks: assert_facilities.yml
+
+# Last, and it depends on being last: the allowlist it checks against is the
+# Audit half of CEE's table, which is only the right half to check once
+# assert_facilities has established that Audit is the enabled sub-facility.
+- name: Assert the endpoint names are partner identities CEE will register
+  ansible.builtin.include_tasks: assert_partner_identity.yml

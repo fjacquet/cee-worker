@@ -19,6 +19,16 @@ state/*
 !state/.gitkeep
 .env
 
+# Dell vendor artefacts. Untracked as of 2026-08-22: they are Dell's to
+# distribute, they are available only through Dell's authenticated support
+# portal, and nothing in this repo builds them. Fetch them into bin/ yourself
+# — see bin/README.md for what each path must be called and why the names
+# matter. bin/README.md itself stays tracked, which is what keeps the
+# directory present in a fresh clone.
+bin/*.rpm
+bin/*.exe
+bin/*.iso
+
 # ansible: real inventory and vars hold site addresses
 ansible/inventory/hosts.yml
 ansible/group_vars/all.yml

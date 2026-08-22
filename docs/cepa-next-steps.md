@@ -91,25 +91,26 @@ before pushing.
 
 ## Open items, in priority order
 
-### 1. Resolve the twenty unmeasured event codes
+### 1. Resolve the twenty unmeasured event codes — DONE, and no capture needed
 
-Only bit 3 (`0x8` = CreateFile) is confirmed. The other twenty in
-`pkg/parser/checkevent.go` come from Dell's documented ordering and are marked
-provisional. A wrong entry writes a wrong EventID into an audit trail.
+Resolved by reading `GetEventDescr8(CEPP_EventType)` out of `libConvert.so` in
+the vendored rpm. The full table is now in `cepa-protocol.md` under "Events",
+with the command to reproduce it. **No array, no SMB client, no host.**
 
-Method — the one that resolved the OneFS codes: **one operation per capture
-window**, ~15 s apart so each lands in its own batch. On `\\nas01.diab.local\SMB01`:
+Outcome: **19 bits, mask `0x7FFFF`**, not 21 / `0x1FFFFF`. Dell's documented
+ordering was right for all nineteen; its last two names
+(`OpenFileReadOffline`, `OpenFileWriteOffline`) do not exist in CEE 9.2.0.0.
+Bit 3 = `FileCreate`, matching the one bit that had been confirmed by capture —
+which is the check on the method.
 
-1. create a file 2. write and close it 3. rename it 4. change permissions
-5. delete it
+Still open, and it is the small half: **carry the table into
+`pkg/parser/checkevent.go`** in cee-exporter, drop bits 19–20, and take the
+"provisional" markers off. Use CEE's own spellings (`FileCreate`, not
+`CreateFile`) or note the mapping where they diverge.
 
-Then read them off:
-
-```bash
-docker logs --since 5m test_cee_exporter | grep -E 'cepa_cee_event|event_type='
-```
-
-win25 **cannot** reach `SMB01` (checked), so this needs a client that can.
+The staged capture on `\\nas01.diab.local\SMB01` is no longer needed to *derive*
+the codes. It would still be worth one pass as confirmation if a client that can
+reach the share turns up — win25 **cannot** (checked).
 
 ### 2. Understand the `0x1` on event deliveries
 
@@ -118,20 +119,32 @@ VC_ERROR_SETUP`. Nothing is lost — `postSuccessEventsMissed` stays 0 and every
 event reaches the consumer — but it is not understood and should be before this
 is called production. Reproduce with `cepa_probe.sh 40`.
 
-### 3. Get the identity into Ansible
+### 3. Get the identity into Ansible — DONE
 
 `cee_configure` writes `EndPoint` from `cee_endpoints[].name`.
 
-Done: `all.yml.example` now ships `name: PeerSoftwareCollector` and explains
-that the name is not free-form — it must be an allowlisted partner id for the
-enabled facility, or CEE refuses and the array publishes nothing.
+- `all.yml.example` ships `name: PeerSoftwareCollector` and explains that the
+  name is not free-form.
+- **The gate exists**: `cee_common/tasks/assert_partner_identity.yml` rejects
+  any endpoint name outside the 27 identities CEE registers for Audit, named
+  in the failure message, with the `0x16` consequence spelled out. It runs last
+  in `cee_common`, after `assert_facilities` has established that Audit is the
+  enabled sub-facility — which is what makes checking only the Audit half
+  correct. The 27 names were re-derived from `CGuidStore::Init()` in
+  `libCEPPAPIWrapper.so` for this purpose, not copied from the doc; all 47
+  (name, facility) pairs matched it exactly.
+- `ansible/tests/test_partner_identity.yml` covers an invented name
+  (`ceeexporter`, the one that actually shipped), a case-only difference, a
+  name valid for a different facility, one bad name hidden among good ones,
+  and the `cee_partner_allowlist_extra` escape hatch. Mutation-tested: with
+  the assertion disabled, all four negative plays fail.
+- `ansible/group_vars/all.yml` on **this** controller still said `ceeexporter`
+  and has been corrected. It is gitignored, so **every other controller must be
+  fixed by hand** — and now fails loudly instead of silently if it is not.
 
-Still open: set the same name in `ansible/group_vars/all.yml` on each
-controller (gitignored, so the example cannot do it for you), and add a
-`cee_common` gate that rejects a name absent from the allowlist. The gate is
-the part that matters — a comment in an example file is not a guard, and this
-failure mode passes every check the repo currently has. It would have caught
-this in 2026-08-12.
+Escape hatch: `cee_partner_allowlist_extra` (default `[]`) exists only for an
+identity added in a CEE release newer than the vendored 9.2.0.0. It cannot make
+an invented name work; it only moves the failure back to being silent.
 
 ### 4. Re-arm the access list
 

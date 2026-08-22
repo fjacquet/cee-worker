@@ -1,0 +1,91 @@
+---
+# Partner-identity gate. Isolated from main.yml so tests/ can include it
+# directly with a deliberately unregistered endpoint name.
+#
+# This is the check that would have caught the 2026-08-12 failure. CEE will
+# not register a consumer whose (friendlyName, facility) pair is absent from
+# CGuidStore, a table compiled into libCEPPAPIWrapper.so. An unregistered
+# name is refused with
+#
+#   Partner error, unknown or invalid GUID; Partner Provided FriendlyName: ...
+#
+# and CEE then answers every array heartbeat status="0x16"
+# (VC_ERROR_CEPP_NOT_FOUND). The array counts its events missed and transmits
+# none — while the playbook, the service, the port, the firewall and every
+# cee_verify check stay green. Nothing else in this repo can see that.
+#
+# The list below is the Audit half of the table, re-derived for this gate from
+# the vendored rpm rather than copied from prose: 47 CGuidStore::ValidateAndAdd
+# calls in libCEPPAPIWrapper.so, of which 28 pass FacilityID 2 (27 distinct
+# names — DellDataGovernance is registered twice for Audit with two GUIDs).
+# FacilityID 2 is Audit per GetFacilityIDDescr's jump table in libConvert.so.
+# docs/cee-partner-allowlist.md carries the whole table with its GUIDs.
+#
+# Audit only, deliberately: assert_facilities.yml has already established that
+# Audit is the one enabled sub-facility, so a name valid for some *other*
+# facility is still wrong here. Ordering in main.yml is what makes that safe.
+#
+# Not looped. A failure inside a looped assert is wrapped as {"msg": "One or
+# more items failed", "results": [...]} and the real fail_msg is only visible
+# nested under results[n].msg, where the tests' rescue blocks — which read
+# ansible_failed_result.msg — cannot see it. Same reason as the host and port
+# checks in validate_endpoints.yml.
+
+- name: Every endpoint name must be a partner identity CEE will register
+  vars:
+    # Distinct friendlyNames registered for FacilityID 2 (Audit) by
+    # CEE 9.2.0.0's CGuidStore::Init().
+    cee_partner_allowlist_audit:
+      - ArcSightConnector
+      - Aspera
+      - Axur
+      - CirqueDigital
+      - CourionCollector
+      - DataInsightConnector
+      - DellChangeAuditor
+      - DellDataGovernance
+      - Likewise
+      - Nasuni
+      - PeerSoftwareCollector
+      - QuestSoftware
+      - Replistor
+      - Scania
+      - SenSage
+      - SolarWindsARM
+      - Splunk
+      - StealthAUDIT
+      - SymantecDataConnector
+      - USDCloud
+      - Varonis
+      - Whitebox
+      - egnyte
+      - emc-gs
+      - scsAudit1
+      - scsAudit2
+      - scsAudit3
+    cee_partner_allowlist_effective: >-
+      {{ cee_partner_allowlist_audit + (cee_partner_allowlist_extra | default([])) }}
+    cee_partner_rejected: >-
+      {{ cee_endpoints | map(attribute='name')
+         | reject('in', cee_partner_allowlist_effective) | list }}
+  ansible.builtin.assert:
+    that:
+      - cee_partner_rejected | length == 0
+    fail_msg: >-
+      Endpoint name(s) {{ cee_partner_rejected }} are not partner identities
+      CEE registers for the Audit facility. CEE compares the name with
+      basic_string<wchar_t>::compare, so the match is exact and
+      case-sensitive.
+      {% set near = cee_partner_rejected | select('in', cee_partner_allowlist_effective | map('lower') | list) | list %}
+      {% if near %}
+      {{ near }} differ from an allowlisted identity only by case.
+      {% endif %}
+      An unregistered name is refused with `Partner error, unknown or invalid
+      GUID`, no partner is registered, and CEE answers every array heartbeat
+      `0x16 CEPP_NOT_FOUND` while every observable here stays green. Pick a
+      name from docs/cee-partner-allowlist.md, set the same string as
+      friendly_name on the consumer, and set that name's paired Audit GUID
+      alongside it — the GUID must be the table's pairing for the name, and
+      a self-generated one can never work.
+      Set cee_partner_allowlist_extra only to name an identity added in a CEE
+      release newer than the 9.2.0.0 this list was read from.

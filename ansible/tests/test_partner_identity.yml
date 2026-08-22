@@ -1,0 +1,168 @@
+---
+# Negative tests for cee_common's partner-identity gate.
+#
+# The first play is the one that matters: `ceeexporter` is the invented name
+# this repo actually shipped in all.yml.example until 2026-08-22. It passed
+# every check the repo had — required vars, endpoint syntax, facilities — and
+# then CEE refused to register the consumer, answered the array `0x16
+# CEPP_NOT_FOUND` on every heartbeat, and the array discarded every event it
+# generated. Three bring-ups ended there.
+#
+# Each canary `fail` message shares no substring with what its rescue asserts
+# on, so deleting an assertion cannot let the canary satisfy the test.
+# Verified by mutation: with the assertion disabled, every negative play fails.
+
+- name: An invented partner name is rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_endpoints:
+      - name: ceeexporter
+        host: 10.26.1.221
+        port: 12229
+  tasks:
+    - name: Expect the gate to fail
+      block:
+        - name: Assert partner identity
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_partner_identity.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "A name CEE has never heard of was accepted as a consumer id."
+      rescue:
+        - name: Confirm it failed for the unregistered-identity reason
+          ansible.builtin.assert:
+            that:
+              - "'0x16 CEPP_NOT_FOUND' in (ansible_failed_result.msg | default('') | string)"
+              - "'ceeexporter' in (ansible_failed_result.msg | default('') | string)"
+              - (ansible_failed_result.assertion | default('') | string) == 'cee_partner_rejected | length == 0'
+            fail_msg: >-
+              The gate failed, but not on cee_partner_rejected with the
+              message naming the offending endpoint and the heartbeat status
+              the array would have seen.
+
+- name: A name that differs only by case is rejected, and the case is called out
+  # CEE compares with basic_string<wchar_t>::compare. `peersoftwarecollector`
+  # is not `PeerSoftwareCollector`, and the failure it produces is the same
+  # silent one — so the message has to say why, or this looks like a typo the
+  # operator has already ruled out.
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_endpoints:
+      - name: peersoftwarecollector
+        host: 10.26.1.221
+        port: 12229
+  tasks:
+    - name: Expect the gate to fail
+      block:
+        - name: Assert partner identity
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_partner_identity.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "A lowercased identity went through as though the comparison were loose."
+      rescue:
+        - name: Confirm the message names case as the difference
+          ansible.builtin.assert:
+            that:
+              - "'differ from an allowlisted identity only by case' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: >-
+              The gate rejected the name but did not point at the case
+              difference, which is the whole reason this play exists.
+
+- name: A name valid for another facility is rejected
+  # `LogPoint` is a genuine CGuidStore identity — for VCAPS+ (FacilityID 12),
+  # not Audit. CEE keys the table on (friendlyName, facility), so this is
+  # exactly as unregistered as an invented name, and nothing but this gate
+  # would say so.
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_endpoints:
+      - name: LogPoint
+        host: 10.26.1.221
+        port: 12229
+  tasks:
+    - name: Expect the gate to fail
+      block:
+        - name: Assert partner identity
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_partner_identity.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "An identity registered for a different feed was taken as an Audit consumer."
+      rescue:
+        - name: Confirm it failed for the unregistered-identity reason
+          ansible.builtin.assert:
+            that:
+              - "'LogPoint' in (ansible_failed_result.msg | default('') | string)"
+              - "'Audit facility' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: >-
+              The gate failed, but not with the message naming LogPoint and
+              the facility it was checked against.
+
+- name: One bad name among several good ones is still rejected
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_endpoints:
+      - name: PeerSoftwareCollector
+        host: 10.26.1.221
+        port: 12229
+      - name: Varonis
+        host: 10.26.1.222
+        port: 12229
+      - name: notapartner
+        host: 10.26.1.223
+        port: 12229
+  tasks:
+    - name: Expect the gate to fail
+      block:
+        - name: Assert partner identity
+          ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_partner_identity.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "A rejected consumer hid behind two accepted ones."
+      rescue:
+        - name: Confirm only the offending name is named
+          ansible.builtin.assert:
+            that:
+              - "'notapartner' in (ansible_failed_result.msg | default('') | string)"
+              - "'PeerSoftwareCollector' not in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: >-
+              The gate failed, but the message did not isolate the one
+              endpoint at fault.
+
+- name: An identity from a newer CEE is admitted via the extra list
+  # The vendored rpm is 9.2.0.0 and the list is read from it, but win25 runs
+  # CEE 9.3.0.0. If a later release adds an entry, this is the way to say so —
+  # and it has to keep working, or the gate becomes a reason to delete the
+  # gate.
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_partner_allowlist_extra:
+      - SomeIdentityAddedIn940
+    cee_endpoints:
+      - name: SomeIdentityAddedIn940
+        host: 10.26.1.221
+        port: 12229
+  tasks:
+    - name: Assert partner identity
+      ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_partner_identity.yml
+
+- name: The identity this deployment actually uses passes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_endpoints:
+      - name: PeerSoftwareCollector
+        host: 10.26.1.221
+        port: 12229
+  tasks:
+    - name: Assert partner identity
+      ansible.builtin.include_tasks: ../roles/cee_common/tasks/assert_partner_identity.yml

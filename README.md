@@ -19,11 +19,11 @@ shipped in `bin/` is CEE **9.2.0.0**.
   rebuilds, openSUSE, and Windows client editions are rejected: CEE reads
   the platform release files (or, on Windows, requires a server product
   type) and self-terminates unless it sees the right string.
-- **Git LFS**: `bin/*.rpm` and `bin/*.exe` are tracked with Git LFS (see
-  `.gitattributes`). Run `git lfs install && git lfs pull` after cloning.
-  Without it, the SLES rpm (a plain blob is unaffected on RHEL) is a
-  ~130-byte pointer file, not the real package — see
-  `docs/ansible-deployment.md` for what that breaks.
+- **The Dell installers, supplied by you.** They are not in this repo — they
+  are Dell's to distribute and need an entitled support-portal account. A
+  fresh clone has an empty `bin/`; put the CEE 9.2.0.0 rpm(s) and/or exe for
+  the platforms you deploy there before running anything. `bin/README.md`
+  lists the exact filenames and why the globs require exactly one match.
 - Time synchronised across the PowerStore array, the CEE host, and the
   consumer host
 - SMB configured on PowerStore (NFS optional)
@@ -103,6 +103,8 @@ testing:
 
 1. Drop the new emc_cee_RHEL-<version>.x86_64.rpm into bin/ (remove the old
    one first — the Dockerfile globs bin/*.rpm and expects exactly one file).
+   `bin/` is gitignored, so this is a local step on every machine that builds
+   or deploys; nothing propagates it for you.
 2. docker compose build --no-cache
 3. docker compose up -d
 

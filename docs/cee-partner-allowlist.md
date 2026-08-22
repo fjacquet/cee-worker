@@ -33,6 +33,21 @@ record for this repo (Dell publishes no specification). `CGuidStore::Init()` mak
 the facility the `%edx` immediate, and the GUID is pushed as three 8-byte pushes
 from `m_Guids` whose offset is the last push's displacement.
 
+The **facility numbers** below are those `%edx` immediates verbatim. Their
+**names** come from a second place — `GetFacilityIDDescr(FacilityID)` in
+`libConvert.so`, a dense jump table over 0–12 where every arm is a bare
+`leaq <name>; retq`, so the mapping is unambiguous:
+
+**0 CAVA, 1 CQM, 2 Audit, 3 Index, 4 CEMA, 5 Backup, 6 CARA, 11 VCAPS,
+12 VCAPS+** (7–10 are `Unknown`).
+
+*Corrected 2026-08-22.* This table previously labelled facility 1 as CAVA, 3 as
+CQM and 6 as Index. The numbers were always right; the names were guessed. No
+entry in CGuidStore uses facility 0, so **there are no CAVA partners here at
+all** — the six rows now marked CQM were the ones mislabelled that way. Audit
+(2), Backup (5) and VCAPS+ (12) were unaffected, which is why nothing
+operational changed: the identity this deployment uses is Audit either way.
+
 Independently validated: this decode yields `Varonis` →
 `971fbab4-b5b2-4176-a945-186ab8e3491e`, exactly the GUID captured in Dell KB
 000049515.
@@ -54,11 +69,11 @@ Choose deliberately.
 
 | friendlyName | facility | GUID |
 |---|---|---|
-| `Northern` | 1 CAVA | `d1891933-708b-4e3c-94c2-4cab729eb83c` |
-| `NTP` | 1 CAVA | `68065318-c819-42bb-84e5-ecd39641a0a7` |
-| `Symantec` | 1 CAVA | `5d4085be-4792-48f4-b1f4-48cd6eccd2cb` |
+| `Northern` | 1 CQM | `d1891933-708b-4e3c-94c2-4cab729eb83c` |
+| `NTP` | 1 CQM | `68065318-c819-42bb-84e5-ecd39641a0a7` |
+| `Symantec` | 1 CQM | `5d4085be-4792-48f4-b1f4-48cd6eccd2cb` |
 | `Axur` | 2 Audit | `03331fbe-6147-4ce1-8478-507ec8f65968` |
-| `RSA` | 1 CAVA | `6090807c-0d57-4dac-a479-732ad598cebb` |
+| `RSA` | 1 CQM | `6090807c-0d57-4dac-a479-732ad598cebb` |
 | `Replistor` | 2 Audit | `7c80d9fc-dfbd-4775-bee0-3c20a3598c8d` |
 | `Varonis` | 2 Audit | `971fbab4-b5b2-4176-a945-186ab8e3491e` |
 | `Whitebox` | 2 Audit | `1423fb52-7c22-41b5-8c24-95398d174f5b` |
@@ -84,11 +99,11 @@ Choose deliberately.
 | `DellChangeAuditor` | 2 Audit | `4dadf39f-d3b0-463e-9bad-256df032eccb` |
 | `DellDataGovernance` | 12 VCAPS+ | `4bfa3ba7-2a10-458d-b6e9-3a248745a504` |
 | `DellDataGovernance` | 12 VCAPS+ | `3d50acf6-4805-4e82-be24-d1f10080111b` |
-| `DellDataGovernance` | 1 CAVA | `bde15eff-9a51-4aeb-a644-286c8f0036e3` |
+| `DellDataGovernance` | 1 CQM | `bde15eff-9a51-4aeb-a644-286c8f0036e3` |
 | `DellDataGovernance` | 2 Audit | `9cfce6d3-2438-4ad5-af97-d41946c7f01b` |
-| `DellDataGovernance` | 1 CAVA | `d689b952-2d2e-48a7-9666-da1fb5b58b9e` |
+| `DellDataGovernance` | 1 CQM | `d689b952-2d2e-48a7-9666-da1fb5b58b9e` |
 | `DellDataGovernance` | 2 Audit | `2e3d4c8a-fe31-456b-958e-7a263106ea8e` |
-| `DellDataGovernance` | 3 CQM | `d8389598-7c99-4bbf-b7a3-9413a2435469` |
+| `DellDataGovernance` | 3 Index | `d8389598-7c99-4bbf-b7a3-9413a2435469` |
 | `scsAudit1` | 2 Audit | `a98daa89-7864-4a80-8fba-13f18861c6bd` |
 | `scsAudit2` | 2 Audit | `0ae7f0a7-1c12-4232-97d6-71486ff90634` |
 | `scsAudit3` | 2 Audit | `182efe3f-455b-43d9-8e9e-0f08839a9911` |
@@ -98,8 +113,18 @@ Choose deliberately.
 | `CommvaultBackup` | 5 Backup | `66380304-a056-4c66-bec6-c24ead58e300` |
 | `CommvaultBackup` | 5 Backup | `e08d487e-d27e-4ba6-9a4f-f9de99c85c42` |
 | `StealthVCAPS` | 12 VCAPS+ | `47c942ec-1a3d-4623-b8c5-8339129b1f9d` |
-| `StealthVCAPS` | 6 Index | `9b2fa334-7b8b-47f9-bf68-5233f09f0991` |
-| `ProlionCryptoSpike` | 6 Index | `313c1408-be16-443f-b582-a0909fda5149` |
+| `StealthVCAPS` | 6 CARA | `9b2fa334-7b8b-47f9-bf68-5233f09f0991` |
+| `ProlionCryptoSpike` | 6 CARA | `313c1408-be16-443f-b582-a0909fda5149` |
 | `PeerSoftwareCollector` | 2 Audit | `49f4da0f-055f-401c-9f83-a95ce61447f6` |
 
-47 entries; **28 valid for the Audit facility**, which is the one this repo enables.
+47 entries; **28 valid for the Audit facility**, which is the one this repo
+enables — 27 distinct names, since `DellDataGovernance` is registered twice for
+Audit with two different GUIDs.
+
+Those 27 names are enforced, not merely documented:
+`ansible/roles/cee_common/tasks/assert_partner_identity.yml` rejects any
+`cee_endpoints[].name` outside them before the playbook touches a host, and
+`ansible/tests/test_partner_identity.yml` covers an invented name, a
+case-only difference, and a name valid for a *different* facility. If you add
+or correct a row here, update that list too — they are two copies of the same
+fact, and the gate is the one that runs.

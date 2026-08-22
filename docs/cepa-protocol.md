@@ -69,6 +69,35 @@ The reply carries the status the array acts on:
 array's own heartbeat are the best progress signal available: they climb while
 CEE refuses and sit at zero when it does not.
 
+### The full status vocabulary
+
+The five above are the ones seen on this deployment. The complete `VC_Status`
+enum, from `GetVCStatusDescr(VC_Status)` in `libConvert.so` — a dense jump table
+over 0x00–0x20, so there is nothing outside this range:
+
+| | | | | | |
+|---|---|---|---|---|---|
+| `0x00` | `SUCCESS` | `0x0b` | `MACRO_VIRUS` | `0x16` | `ERROR_CEPP_NOT_FOUND` |
+| `0x01` | `ERROR_SETUP` | `0x0c` | `OTHER_VIRUS` | `0x17` | `ERROR_CEPP_INTERFACE` |
+| `0x02` | `ERROR_AV_NOT_FOUND` | `0x0d` | `ERROR_AVINTERFACE` | `0x18` | `MSRPC_ERROR` |
+| `0x03` | `ERROR_FILE_NOT_FOUND` | `0x0e` | `ERROR_SHUTDOWN` | `0x19` | `ERROR_HTTP` |
+| `0x04` | `ERROR_ACCESS_DENIED` | `0x0f` | `ERROR_AUTH` | `0x1a` | `ERROR_CEMA_KMIP` |
+| `0x05` | `ERROR_FAIL` | `0x10` | `ERROR_BAD_REQUEST` | `0x1b` | `ERROR_CEMA_KMIP_REVOCATION` |
+| `0x06` | `ERROR_TIMEOUT` | `0x11` | `ERROR_INSUFFICIENT_RESOURCES` | `0x1c` | `ERROR_CEMA_OTHER` |
+| `0x07` | `CHECK_IN_PROGRESS` | `0x12` | `OFFLINE` | `0x1d` | `ERROR_CEMA_NOT_FOUND` |
+| `0x08` | `SUSPECT_VIRUS` | `0x13` | `ERROR_CEPP_ACCESS_DENIED` | `0x1e` | `ERROR_CEMA_INTERFACE` |
+| `0x09` | `DETECT_VIRUS` | `0x14` | `ERROR_CEPP_DISK_FULL` | `0x1f` | `ERROR_CEMA_LOCKBOX` |
+| `0x0a` | `TEST_VIRUS` | `0x15` | `ERROR_CEPP_OTHER` | `0x20` | `ERROR_BAD_PROTOCOL` |
+
+These are CEE's own strings; the `VC_` prefix used above and in Dell's material
+is not part of them. `0x12 OFFLINE` and `0x16 ERROR_CEPP_NOT_FOUND` match what
+was observed on the wire, which is the check on this decode.
+
+The same binary also settles the facility numbering, from
+`GetFacilityIDDescr(FacilityID)`: **0 CAVA, 1 CQM, 2 Audit, 3 Index, 4 CEMA,
+5 Backup, 6 CARA, 11 VCAPS, 12 VCAPS+** (7–10 are `Unknown`). Audit is 2 — which
+is the number that matters, since it keys the partner allowlist.
+
 ## Leg 2 — the four gates
 
 Every one of these must pass. Failing any of them yields `0x16` on leg 1, which
@@ -157,13 +186,43 @@ CEE delivers to the consumer as:
 Prefer `encodedPath` when present — CEE supplies it exactly when the plain
 attribute is lossy.
 
-`event` is a **bitmask**, one bit per event in the order Dell documents
-(`OpenFileNoAccess, OpenFileRead, OpenFileWrite, CreateFile, CreateDir,
-DeleteFile, DeleteDir, CloseModified, CloseUnmodified, RenameFile, RenameDir,
-SetAclFile, SetAclDir, OpenDir, CloseDir, FileRead, FileWrite, SetSecFile,
-SetSecDir, OpenFileReadOffline, OpenFileWriteOffline` — mask `0x1fffff`, 21
-names, 21 bits). **Bit 3 (`0x8` = CreateFile) is confirmed by measurement; the
-other twenty are documented, not measured.**
+`event` is a **bitmask**. The full vocabulary, with CEE's own spelling of each
+name, read out of `GetEventDescr8(CEPP_EventType)` in `libConvert.so`:
+
+| bit | value | name | | bit | value | name |
+|---|---|---|---|---|---|---|
+| 0 | `0x1` | `FileOpenNoAccess` | | 10 | `0x400` | `DirRename` |
+| 1 | `0x2` | `FileOpenRead` | | 11 | `0x800` | `FileSetACL` |
+| 2 | `0x4` | `FileOpenWrite` | | 12 | `0x1000` | `DirSetACL` |
+| 3 | `0x8` | `FileCreate` | | 13 | `0x2000` | `DirOpen` |
+| 4 | `0x10` | `DirCreate` | | 14 | `0x4000` | `DirClose` |
+| 5 | `0x20` | `FileDelete` | | 15 | `0x8000` | `FileRead` |
+| 6 | `0x40` | `DirDelete` | | 16 | `0x10000` | `FileWrite` |
+| 7 | `0x80` | `FileCloseModified` | | 17 | `0x20000` | `FileSetSecurity` |
+| 8 | `0x100` | `FileCloseUnmodified` | | 18 | `0x40000` | `DirSetSecurity` |
+| 9 | `0x200` | `FileRename` | | — | `0xFFFFFFFF` | all events |
+
+**19 bits, mask `0x7FFFF`.** `0x0` and any unassigned value render as `Unknown`.
+
+This supersedes the earlier reading of this section, which listed 21 names
+against mask `0x1FFFFF` with only bit 3 measured. The correction is small and
+mostly reassuring: **the first nineteen were right**, in exactly that order —
+only Dell's `OpenFileReadOffline` and `OpenFileWriteOffline` are absent, and CEE
+9.2.0.0 has no bits 19 or 20 at all. Bit 3 (`0x8`) resolves to `FileCreate`,
+which is the one entry that had been confirmed by capture on real hardware, so
+the extraction agrees with the only ground truth there was.
+
+Read it yourself with no host and no array — `libConvert.so` is in the vendored
+rpm, and CEE dispatches on this exact table:
+
+```bash
+rpm2cpio bin/emc_cee_RHEL-9.2.0.0.x86_64.rpm | bsdtar -xf - ./opt/CEEPack/libConvert.so
+llvm-objdump -d --start-address=0xbe40 --stop-address=0xbff0 opt/CEEPack/libConvert.so
+```
+
+Values 0–0x20 go through a jump table at `.rodata:0x1420c`; everything above is
+a binary-search compare chain, each arm a bare `leaq <name>; retq`. There is a
+`wchar_t` twin, `GetEventDescr`, over the same values.
 
 Note this is a *different* numbering from OneFS, whose `NFSEventArgs/@eventType`
 is fully resolved in `cee-9-3-windows-bring-up.md`. Do not share one table.

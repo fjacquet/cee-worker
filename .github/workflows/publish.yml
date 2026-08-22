@@ -20,6 +20,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The Dell rpm is no longer tracked (see bin/README.md), so a clean
+      # checkout cannot build the image. Fail here, with the reason, rather
+      # than letting the Dockerfile's COPY fail with a bare "no such file".
+      #
+      # This job therefore cannot run on a stock GitHub runner any more. To
+      # restore it, supply the artefact before this step — a self-hosted
+      # runner with bin/ populated, or a download step against wherever your
+      # organisation keeps its licensed Dell media.
+      - name: Require the vendored CEE rpm
+        run: |
+          if ! ls bin/emc_cee_RHEL-*.x86_64.rpm >/dev/null 2>&1; then
+            echo "::error::bin/emc_cee_RHEL-*.x86_64.rpm is absent."
+            echo "::error::Dell artefacts are not tracked in this repo; see bin/README.md."
+            echo "::error::Supply the rpm before this step, or do not run this workflow."
+            exit 1
+          fi
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:

@@ -89,7 +89,8 @@ name the specific rebuild — or edition — that failed.
 
 Gates live in their own task files under `cee_common/tasks/`
 (`assert_required_vars.yml`, `assert_facilities.yml`,
-`validate_endpoints.yml`) and `cee_preflight/tasks/`
+`validate_endpoints.yml`, `assert_partner_identity.yml`) and
+`cee_preflight/tasks/`
 (`assert_os_family.yml`, `assert_platform_RedHat.yml`,
 `assert_platform_Suse.yml`, `assert_platform_Windows.yml`), specifically
 so `ansible/tests/` can include them with deliberately wrong input. Keep
@@ -104,10 +105,24 @@ its Windows path globs the exe. The two rpm globs require exactly one
 matching file; remove the old one before adding a new one. The Windows
 glob is the exception — it interpolates `cee_windows_version` into the
 filename (`EMC_CEE_Pack_x64_9_2_0_0.exe`), so `bin/` may hold several
-releases at once and each host selects its own. `.gitattributes` puts
-`bin/*.rpm` and `bin/*.exe` in Git LFS, but only for future commits — the
-RHEL rpm predates it and stays an ordinary blob deliberately, to avoid
-rewriting history for a 4 MB file.
+releases at once and each host selects its own.
+
+**Those artifacts are not tracked.** As of 2026-08-22 `bin/*.rpm`,
+`bin/*.exe` and `bin/*.iso` are gitignored and the Git LFS filters are
+gone: they are Dell's to distribute, need an entitled portal account, and
+nothing here builds them. Only `bin/README.md` is tracked, which is what
+keeps the directory in a fresh clone. Assume a checkout has an **empty
+`bin/`** — never write a doc, test or CI step that assumes otherwise, and
+never re-add the LFS filters (`.gitignore` is the better guard; the old
+filters converted any `git add` of a vendor artifact to a pointer
+silently). The files remain in *history* — LFS pointers for the SLES rpm
+and the exe, an ordinary 4 MB blob for the RHEL rpm, which predates LFS —
+so old commits still check out correctly and nothing was rewritten.
+
+This breaks `publish.yml`'s GHCR build on a stock runner by design: it now
+fails at an explicit guard step naming the missing rpm, rather than at the
+Dockerfile's `COPY`. Restoring it needs a runner that supplies the
+artifact.
 
 The design philosophy throughout: **CEE fails silently**. Its historical
 failure signature was an empty log directory and no signal. Every
@@ -216,6 +231,18 @@ that read it could not pass on any real host.
   uses `PeerSoftwareCollector` + `49f4da0f-055f-401c-9f83-a95ce61447f6`.
   Registering is still not enough — CEE then probes with `<HeartBeatRequest />`
   and needs `hbStatus=0`, or the partner stays OFFLINE and the array gets `0x12`.
+  `cee_common/tasks/assert_partner_identity.yml` enforces the name half of this
+  (the 27 distinct Audit identities) before the playbook touches a host; it runs
+  last in `cee_common` because checking only the Audit half is correct only once
+  `assert_facilities` has established Audit is the enabled sub-facility.
+- **The event bitmask, the status codes and the facility numbers are all
+  readable from `libConvert.so`** in the vendored rpm, via `GetEventDescr8`,
+  `GetVCStatusDescr` and `GetFacilityIDDescr` — each a jump table or a compare
+  chain whose arms are a bare `leaq <name>; retq`, so the decode is unambiguous.
+  The `event` mask is **19 bits, `0x7FFFF`** (Dell's documented 21-name ordering
+  is right for the first 19; the two `*Offline` names do not exist in 9.2.0.0).
+  Facility **2 is Audit**. Tables in `docs/cepa-protocol.md`. Prefer this over
+  Dell's prose — it has been wrong here in both directions.
 - **`Debug`/`Verbose` are a 6-bit mask, not a scale.** `1` prints the banner
   only, `9` prints *less* than `3`, and **63** is the maximum — the level at
   which CEE names the reason it refused a partner. Three bring-ups concluded
