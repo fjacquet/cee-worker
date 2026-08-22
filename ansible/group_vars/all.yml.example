@@ -103,6 +103,8 @@ cee_manage_firewall: true
 # back as part of finishing the job: 0 leaves the host firewall as the only
 # gate on who may post to 12228.
 cee_access_list_enabled: 1
+# Every publishing source, one per line. Only consulted when the flag above
+# is 1.
 cee_access_list:
   - nas01.example.com     # PowerStore NAS server FQDN — a name, not an address
   - 10.20.30.41           # PowerScale node 1 — OneFS is the documented

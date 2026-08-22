@@ -18,7 +18,10 @@ AT-8, AT-10 and AT-11 there.
 - PowerStoreOS 4.1 or later
 - CEE 9.2 or later, deployed and verified
 - Time synchronised across the array, the CEE host, and the consumer host
-- SMB configured on the NAS server; NFS optional
+- SMB configured on the NAS server; NFS optional. Not a preference — an
+  NFS-only NAS server cannot have Events Publishing enabled at all (Dell KB
+  000060271). A standalone SMB server with no shares satisfies it; see
+  `cepa-bring-up-findings.md` for the multiprotocol DNS consequence.
 - TCP 12228 open from the array to the CEE host — including **on the CEE
   host's own firewall**. RHEL 9 ships firewalld enabled with only ssh
   allowed; the Ansible playbook opens the port when `cee_manage_firewall`
@@ -294,8 +297,54 @@ concluding anything from an empty file.
 If Stage 2 passed and Stage 3 did not, the fault is in CEE's own
 configuration or on the inbound leg — PowerStore to CEE. Stage 2 rules out
 the consumer, the network path to it and the port mapping, but it does not
-exercise CEE's config at all, because it bypasses CEE entirely. Check in
-this order, cheapest first:
+exercise CEE's config at all, because it bypasses CEE entirely.
+
+**First, make CEE talk.** Past the startup banner, CEE 9.2.0.0 logs nothing
+per request at the shipped `Debug=0`/`Verbose=0` — not even for a *successful*
+exchange, confirmed by capturing a healthy heartbeat on the wire and finding
+`-- No entries --` across that exact window. A quiet journal is therefore not
+evidence that nothing arrived, and every check below is read blind without
+this. In `group_vars/all.yml`, in one edit:
+
+    cee_debug: 1
+    cee_verbose: 1
+    cee_access_list_enabled: 0      # see step 3
+
+then `ansible-playbook site.yml` once. Doing this first rather than partway
+down the list matters: the re-run rewrites `emc_cee_config.xml` and restarts
+the service, which invalidates anything already read from either.
+
+Set `cee_debug` and `cee_verbose` back to 0 when the diagnosis closes — debug
+logging is not a steady-state setting.
+
+`cee_access_list_enabled: 0` is diagnostic too, and unlike the debug pair it
+has a real fix rather than just an "off". Restoring it to 1 with an
+*address*-based list restores the failure in step 3 — but the server-name form
+has since been tested and works: the list holds **FQDNs**, plus the node
+addresses for PowerScale, which has no PTR records to be matched by name. So
+populate `cee_access_list` with names and set the flag back to 1; leaving it at
+0 is a bring-up state, not a destination.
+
+While it is 0, CEE accepts posts from anything that can reach 12228, so
+restrict the port by source rather than opening it broadly —
+`cee_manage_firewall` opens 12228 to any source, so a source-scoped firewalld
+rich rule or an upstream network ACL naming the array addresses is what
+actually replaces the access list in the meantime.
+
+Read CEE's own output anchored to the restart, so nothing from before it can
+be mistaken for a result, and with heartbeats filtered out — at a 10s
+interval they will otherwise be all you see:
+
+    journalctl -u emc_cee \
+      --since "$(systemctl show -p ActiveEnterTimestamp --value emc_cee)" \
+      | grep -vE 'DispatchEvent\(\): .*CEPP_HEARTBEAT request'
+
+Filter the *successful* heartbeats specifically, not every line matching
+`HEARTBEAT`. The access-list rejection in step 3 is itself a heartbeat line
+(`BAD CEPP_HEARTBEAT request ... event not allowed`), so the broader filter
+would hide the failure this section exists to find.
+
+Then check in this order, cheapest first:
 
 1. **CEE's rendered configuration.** On the CEE host, read what the
    playbook actually wrote:
@@ -340,9 +389,11 @@ this order, cheapest first:
    array reports this as a setup failure and never publishes at all:
    PowerStore raises `0x01301b03 all publishing pools unavailable`, OneFS
    logs `vcstatus 0x1: VC_ERROR_SETUP`. Setting `cee_access_list_enabled: 0`
-   clears it immediately. See `cepa-bring-up-findings.md` — including the
-   caveat that this removes a real access control, leaving the firewall as
-   the only gate.
+   clears it immediately — which is why it is in the preamble edit above.
+   See `cepa-bring-up-findings.md`, including the caveat that this removes a
+   real access control, leaving the firewall as the only gate. Note that 0
+   is a *diagnostic* setting: the durable fix is to populate the list with
+   FQDNs rather than addresses and set it back to 1.
 
    **Read the journal, but turn debug on first — and turn it up to 63.** At
    the shipped `Debug=0`/`Verbose=0`, CEE 9.2.0.0 writes *nothing* to the

@@ -3,16 +3,24 @@
 # and .gitignore. Nothing under bin/ is in the index now, so a filter there
 # has nothing to act on.
 #
+# That also retires the `bin/emc_cee_RHEL-9.2.0.0.x86_64.rpm !filter !diff
+# !merge` exemption added in 1ce79f0. It was the right fix for the problem
+# it addressed — the glob matched a file that predates LFS, so git ran the
+# clean filter on a 4 MB blob and reported it as a 132-byte pointer, a
+# phantom diff that survived `git restore` — but an exemption from a filter
+# that no longer exists is dead weight. Untracking the artefacts dissolves
+# the same phantom diff at the source.
+#
 # They are still LFS pointers in *history*, which is why they check out
 # correctly at older commits: git reads .gitattributes from the commit being
-# checked out, not from HEAD. bin/emc_cee_RHEL-9.2.0.0.x86_64.rpm is the one
-# exception — it predates LFS and is an ordinary 4 MB blob in history. None
-# of that changes by removing the lines here; only a history rewrite would.
+# checked out, not from HEAD. The RHEL rpm is the one exception — an
+# ordinary 4 MB blob throughout. None of that changes by removing the lines
+# here; only a history rewrite would.
 #
-# Do not re-add these filters. Their old comment warned that the pattern
-# matched unconditionally, so any `git add` of a vendor artefact converted it
-# to a pointer silently; .gitignore now stops the add itself, which is the
-# better guard.
+# Do not re-add these filters. Their original comment warned that the
+# pattern matched unconditionally, so any `git add` of a vendor artefact
+# converted it to a pointer silently; .gitignore now stops the add itself,
+# which is the better guard.
 
 # Vendor PDFs under docs/ are small enough to keep as ordinary blobs, but
 # git's binary heuristic only inspects the first 8000 bytes and misses at

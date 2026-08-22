@@ -11,25 +11,38 @@ debug journal, `isi_audit_viewer` on the cluster. Where a claim is an
 inference rather than a measurement it says so.
 
 > **Superseded on the central question, 2026-08-22.** Stage 3 is now proven,
-> and this document's conclusion — that the remaining fault was array-side
-> event *generation* — was wrong. The array was generating events all along;
-> CEE was refusing to register the consumer and telling the array it had no
-> CEPA configuration. See `cepa-2026-08-22-powerstore-session.md` and
-> `cee-partner-allowlist.md`. Everything else measured here still stands.
+> and the PowerStore half of the outcome below — that the remaining fault was
+> array-side event *generation* — was wrong. The array was generating events
+> all along; CEE was refusing to register the consumer and telling the array
+> it had no CEPA configuration, so the array discarded them. The PowerScale
+> half was closer: CEE really did refuse that handshake, and for the same
+> underlying reason, an identity it would not register. See
+> `cepa-2026-08-22-powerstore-session.md` and `cee-partner-allowlist.md`.
+> Everything else measured here still stands.
 
 **Outcome (as recorded on 2026-08-12): Stage 3 of
-`powerstore-setup-runbook.md` is still unproven.** No
-array-originated event has ever reached the consumer. What changed is that the
-failure is now localised: every leg this repo controls is verified working, and
-the remaining fault is array-side event *generation*, which is a Dell support
-matter. Stages 1 and 2 pass.
+`powerstore-setup-runbook.md` is still unproven.** No array-originated event
+has ever reached the consumer *through CEE*. Stages 1 and 2 pass. What changed
+is that the failure is localised, and it is two distinct faults, not one:
+
+- **PowerStore** connects, heartbeats cleanly and generates no events. Every
+  leg this repo controls is verified working, so the remaining fault is
+  array-side event *generation* — a Dell support matter.
+- **PowerScale** generates events correctly but CEE cannot parse its
+  handshake, so nothing is forwarded. That is a CEE-side limitation, not an
+  array fault, and it is separate from the PowerStore case.
+
+Events *have* reached cee-exporter from PowerScale, but only by bypassing CEE
+entirely, with the exporter patched to answer OneFS directly. That is a
+finding about the exporter, not a Stage 3 pass.
 
 ## The access list rejects every array when it holds IP addresses
 
-The single highest-impact finding, because this repo ships
-`cee_access_list_enabled: 1` by default and `group_vars/all.yml.example`
-describes that as "the vendor default and the right posture on a real
-network".
+The single highest-impact finding, because this repo shipped
+`cee_access_list_enabled: 1` and described it as "the vendor default and the
+right posture on a real network". The comments have been corrected; **the
+shipped value has not**, so a config copied from `all.yml.example` still
+reproduces this. See "What this should become" below.
 
 With `AccessListEnabled=1` and an `AccessList` of IP addresses, CEE rejects
 the CEPA heartbeat of both array families before doing anything else:
@@ -80,24 +93,31 @@ rejection mechanism mid-fault would add a variable to a problem upstream of CEE.
 Turning it back to `1` is the last step of the bring-up: at `0`, CEE accepts
 CEPA posts from anything that can reach 12228 and the firewall is the only gate.
 
-## CEE 9.2.0.0 logs nothing at all unless Debug and Verbose are on
+## CEE 9.2.0.0 logs no request traffic unless Debug and Verbose are on
 
 `CLAUDE.md` says CEE logs to stdout and systemd captures it into the journal.
-True, but incomplete in a way that costs hours: at the shipped
-`Debug=0`/`Verbose=0`, CEE writes **nothing** to the journal — not even for a
-*successful* exchange.
+True, but incomplete in a way that costs hours: the startup banner is all you
+get. At the shipped `Debug=0`/`Verbose=0`, CEE writes nothing per request —
+not even for a *successful* exchange.
 
 Measured directly: a PowerScale heartbeat was captured on the wire at
 08:34:06 completing normally (`HTTP/1.1 200 OK`, a well-formed
 `CheckFileResponse`), and `journalctl -u emc_cee` across that exact window
 returned `-- No entries --`.
 
-So an empty journal is not evidence that nothing arrived, and
-`powerstore-setup-runbook.md`'s diagnosis step 3 — "a rejected source is
-logged there; a firewalled one leaves no trace" — only holds with debug
-enabled. Set `cee_debug: 1` and `cee_verbose: 1` *before* concluding anything
-from journal silence. Every root cause in this document came from that switch;
-none was visible without it.
+The distinction matters to more than the operator. `cee_verify` asserts that
+`[EMC CEE]` appears in the journal since the unit's own start
+(`roles/cee_verify/tasks/Linux.yml`), and that check is matching the startup
+banner, not traffic — so it is unaffected by the debug level. Nothing here
+says that assertion is unreachable at the defaults; don't weaken it on the
+strength of this section.
+
+What the section does say: a journal with nothing after the banner is not
+evidence that nothing arrived, so `powerstore-setup-runbook.md`'s diagnosis
+step — "a rejected source is logged there; a firewalled one leaves no trace" —
+only holds with debug enabled. Set `cee_debug: 1` and `cee_verbose: 1` *before*
+concluding anything from journal silence, and set them back afterwards. Every
+root cause in this document came from that switch; none was visible without it.
 
 ## PowerStore: connected, healthy, and silent
 
@@ -148,7 +168,7 @@ give-away was `Protocol Audit Log Time` not advancing; on PowerStore it was
 the export directory's mtime. Use a world-writable subdirectory created once
 (`/test2/ceetest`), not `sudo` against a root-squashed export.
 
-## PowerScale is not usable with this CEE build
+## PowerScale: CEE cannot parse the OneFS handshake
 
 OneFS generates the events correctly — `isi_audit_viewer -t protocol` shows
 the exact test filenames with `eventType: create` / `delete`, `protocol:
@@ -204,13 +224,9 @@ sends, which is why `IsRegisterRequest` does not match it:
 UTF-16LE (`powerscale1`).
 
 **The `status` attribute of the reply is the `vcstatus` OneFS reports.**
-Measured twice, on two different values, by capturing CEE's reply on the wire
-and reading the cluster's log for the same exchange:
-
-| CEE replies | OneFS logs |
-|---|---|
-| `status="0x1"` | `vcstatus 0x1: VC_ERROR_SETUP` |
-| `status="0x16"` | `vcstatus 0x16: VC_ERROR_CEPP_NOT_FOUND` |
+Measured twice, by capturing CEE's reply on the wire and reading the cluster's
+log for the same exchange: `status="0x1"` surfaced as `VC_ERROR_SETUP`,
+`status="0x16"` as `VC_ERROR_CEPP_NOT_FOUND`.
 
 So the reply shape to implement is CEE's, with a success status:
 
@@ -219,11 +235,6 @@ So the reply shape to implement is CEE's, with a success status:
     <CEPPHeartBeatResponse><CEPPCapabilities>
     <Protocols CIFS="1" NFS="1" HDFS="0"/><Partner multiplicity="1"/>
     </CEPPCapabilities></CEPPHeartBeatResponse></HeartBeatResponse></CheckFileResponse>
-
-`0x0` is an **inference**, not a measurement: no successful OneFS handshake
-has ever been observed, because CEE never gets that far with this cluster.
-Both observed non-zero values map to errors and 0 is the conventional
-success, but it must be confirmed by trying it.
 
 ### The handshake was implemented, and it works
 
@@ -282,12 +293,13 @@ which is which. Isolating one operation per capture is the remaining work —
 guessing the mapping here would put wrong event IDs into an audit trail, which
 is worse than not writing one.
 
-## Array-side prerequisite this repo under-documents
+## Array-side prerequisite, and why it is not a preference
 
-`powerstore-setup-runbook.md` and `ansible-deployment.md` both say "SMB
+`powerstore-setup-runbook.md` and `ansible-deployment.md` both said "SMB
 configured on the NAS server; NFS optional" with no rationale. The real rule
-is stronger and worth stating: **an NFS-only NAS server cannot have Events
-Publishing enabled at all.** Dell KB 000060271 — *"It is not possible to
+is stronger: **an NFS-only NAS server cannot have Events Publishing enabled
+at all.** Both prerequisite lists now say so and point here. Dell KB
+000060271 — *"It is not possible to
 enable CEPA on NFS Only NAS Server… You must enable SMB on the NAS Server in
 order to be able to configure CEPA, even though CEPA works for both NFS and
 SMB."* The workaround is a **standalone** SMB server with no shares and no SMB
@@ -296,6 +308,34 @@ file systems; domain join is not required.
 Consequence worth knowing before doing it: adding SMB alongside NFS turns the
 NAS server multiprotocol, and Dell states DNS cannot be disabled on a
 multiprotocol NAS server. Plan for working DNS on the array.
+
+## What this should become
+
+Both hard findings above are recorded as prose, and this repo's stated design
+is that a measured invariant becomes a named gate. Neither has been promoted
+yet, and neither should be promoted by editing docs:
+
+- **A static gate.** `cee_access_list_enabled: 1` together with an
+  address-populated `cee_access_list` is a combination measured never to
+  work. It belongs in a `validate_access_list.yml` beside
+  `cee_common/tasks/validate_endpoints.yml` — pure Jinja, so
+  `ansible/tests/` can exercise it with no VM — failing by name on the
+  offending entry, with a negative test that is mutation-tested like every
+  other one in that directory.
+- **A runtime gate.** `server [...] event not allowed` is a specific literal
+  in CEE's own journal that means the deployment is dead, structurally
+  identical to the `Platform is not supported` line `cee_verify` already
+  matches. It only appears with debug enabled, so the assert has to be
+  conditional and its skip path loud, in the style of `cee_manage_firewall`.
+- **The shipped default.** `all.yml.example` still ships `1` with an address
+  under it. Either flip it to `0` with the security caveat inline, or ship a
+  placeholder server name — but not a combination this document says cannot
+  work. Flipping it is a behaviour change for existing deployments and wants
+  its own commit.
+
+The server-name experiment gates all three: if names work where addresses do
+not, the static gate becomes "addresses are wrong", not "the feature is
+unusable", and the default stays `1`.
 
 ## State left behind
 
