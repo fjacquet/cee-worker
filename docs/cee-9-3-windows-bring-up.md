@@ -10,10 +10,14 @@ Read `cepa-bring-up-findings.md` first — this document assumes it and does not
 repeat it. Where a claim here is an inference rather than a measurement, it
 says so.
 
-**Outcome: PowerScale now delivers events end to end, and CEE is not in that
-path.** OneFS speaks CEPA directly to cee-exporter. CEE 9.3 rejects the same
-cluster's heartbeat outright. PowerStore remains unproven and, since being
-repointed, has stopped heartbeating any CEE host at all.
+**Outcome (2026-08-14): PowerScale now delivers events end to end, and CEE is
+not in that path.** OneFS speaks CEPA directly to cee-exporter. CEE 9.3 rejects
+the same cluster's heartbeat outright. PowerStore remains unproven and, since
+being repointed, has stopped heartbeating any CEE host at all.
+
+> **PowerStore is no longer unproven.** On 2026-08-22 it delivered events end to
+> end through CEE 9.3 on this same host. The blocker was CEE refusing to
+> register the consumer — see `cepa-2026-08-22-powerstore-session.md`.
 
 > **Superseded — read `cepa-2026-08-22-powerstore-session.md` instead.** A
 > draft of this note claimed the `CEPP_NOT_FOUND` was caused by `cee-exporter`

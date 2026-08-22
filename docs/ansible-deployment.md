@@ -11,10 +11,12 @@ configuration and verification against a real host: a single
 SLES 15 SP7 and Windows Server 2025 Datacenter hosts in the same play
 (recap of the last run: `rhel ok=61 changed=2 failed=0`,
 `sles ok=60 changed=2 failed=0`, `winvm ok=56 changed=2 failed=0`). What
-that does **not** prove: no PowerStore array has ever been in the loop
-on any platform, so the actual event path is unverified — see the
-Windows section below and `docs/acceptance-tests.md` for exactly what is
-and is not established.
+that does **not** prove: the playbook does not exercise the event path.
+That path has since been proven separately (2026-08-22, PowerStore →
+CEE → cee-exporter → `.evtx` read by `Get-WinEvent`), but it needed one
+thing the playbook cannot supply — a consumer identity CEE will accept.
+See `docs/cee-partner-allowlist.md` and
+`docs/cepa-2026-08-22-powerstore-session.md`.
 
 ## Prerequisites
 

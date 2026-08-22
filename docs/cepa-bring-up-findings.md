@@ -10,7 +10,15 @@ Everything below was measured on those hosts — tcpdump on the wire, CEE's own
 debug journal, `isi_audit_viewer` on the cluster. Where a claim is an
 inference rather than a measurement it says so.
 
-**Outcome: Stage 3 of `powerstore-setup-runbook.md` is still unproven.** No
+> **Superseded on the central question, 2026-08-22.** Stage 3 is now proven,
+> and this document's conclusion — that the remaining fault was array-side
+> event *generation* — was wrong. The array was generating events all along;
+> CEE was refusing to register the consumer and telling the array it had no
+> CEPA configuration. See `cepa-2026-08-22-powerstore-session.md` and
+> `cee-partner-allowlist.md`. Everything else measured here still stands.
+
+**Outcome (as recorded on 2026-08-12): Stage 3 of
+`powerstore-setup-runbook.md` is still unproven.** No
 array-originated event has ever reached the consumer. What changed is that the
 failure is now localised: every leg this repo controls is verified working, and
 the remaining fault is array-side event *generation*, which is a Dell support
@@ -118,6 +126,14 @@ Eliminated by measurement, each with its own test:
 
 That leaves event generation on the array. It is a Dell support case, and the
 evidence above is what to hand them.
+
+> **Wrong.** The array was generating events correctly; they were being
+> discarded because CEE answered `CEPP_NOT_FOUND`. The elimination table above
+> is sound — every row of it was tested — but it has a missing row: the
+> consumer's *identity*, which CEE validates against a compiled-in allowlist.
+> Nothing in the table could have found that, because every test in it used the
+> same rejected identity. When a table of eliminations leaves only one suspect,
+> consider that the table may be missing a row.
 
 ### Verify the test actually wrote something
 

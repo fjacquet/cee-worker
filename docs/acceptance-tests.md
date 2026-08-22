@@ -14,6 +14,17 @@ and this document does not silently upgrade any of them to "passed" —
 where a test has genuinely executed, that is stated explicitly next to
 it; everything else stays exactly as untested as it was before.
 
+> **Overtaken by events, 2026-08-22.** The end-to-end path has now run:
+> PowerStore `diabps01` / NAS01 → CEE 9.3.0.0 on Windows Server 2025 →
+> cee-exporter → binary `.evtx`, read back by `Get-WinEvent` on Windows
+> (25 records, EventID 4663, Provider `PowerStore-CEPA`). The paragraph
+> above and the "what has never been done" list below describe the state
+> before that run; they are kept because the discipline they argue for is
+> what eventually found the fault. For the current state read
+> `cepa-2026-08-22-powerstore-session.md`. AT-8 through AT-14 have not been
+> re-walked individually and are still, strictly, tests to be run — what is
+> proven is the path they cover, not each test's own procedure.
+
 ## Platform coverage
 
 This plan targets the three platforms the Ansible roles implement:
@@ -81,15 +92,19 @@ Stated plainly, because the rest of this plan is calibrated against it.
 Two claims that used to live here are now false in the understating
 direction and have been corrected rather than left in place:
 
-- **No PowerStore array has ever been configured from
-  `docs/powerstore-setup-runbook.md`, on any platform.** The procedure is
-  transcribed from vendor documentation, not from a completed run.
-- **No event has ever travelled the full path, on any platform.** Not
-  PowerStore → CEE, and not CEE → cee-exporter. The runbook's Stage 2
-  probe exercises the consumer alone. Install, configuration and
-  verification of CEE itself have run for real (see above); the array
-  side of the flowchart below has not been touched.
-- **No `.evtx` this repo produced has ever been read by Windows.** The
+- ~~**No PowerStore array has ever been configured from
+  `docs/powerstore-setup-runbook.md`.**~~ **Done 2026-08-22** — publisher,
+  pool, per-file-system enablement, verified from the array's REST API.
+- ~~**No event has ever travelled the full path.**~~ **Done 2026-08-22.**
+  PowerStore → CEE → cee-exporter, with `postSuccessEventsMissed` going
+  151 → 0 and `cee_events_written_total` climbing. The blocker was CEE
+  refusing to register the consumer; see `cee-partner-allowlist.md`.
+- ~~**No `.evtx` this repo produced has ever been read by Windows.**~~
+  **Done 2026-08-22**: `Get-WinEvent` on Windows Server 2025 read a
+  cee-exporter-written file, 25 records, no repair prompt. The original
+  concern, kept because it was well-founded:
+
+  The
   file is written by a non-Windows build through a Go encoder, and every
   check available on macOS or RHEL passes identically on a valid file and
   on a corrupt one. AT-14 exists for this and needs a Windows host. (This
