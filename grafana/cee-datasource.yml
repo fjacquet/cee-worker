@@ -13,4 +13,8 @@ datasources:
     url: http://prometheus:9090
     editable: false
     jsonData:
-      timeInterval: 15s
+      # Must match the cee-exporter job's scrape_interval in
+      # prometheus.test.yml. Grafana uses it as the minimum step and to compute
+      # $__rate_interval = max($__interval + timeInterval, 4 * timeInterval);
+      # declaring 15s against 10s data skips roughly one sample in three.
+      timeInterval: 10s

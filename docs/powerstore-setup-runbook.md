@@ -105,18 +105,29 @@ than `3`):
     # Linux:   <Debug>63</Debug> and <Verbose>63</Verbose> in emc_cee_config.xml
     # Windows: HKLM\SOFTWARE\EMC\CEE\Configuration\Debug = 63 (and Verbose)
 
-restart the CEE service, and read its trace (Linux: `journalctl -u emc_cee`;
-Windows: `dbgcapture.ps1` or Sysinternals DebugView, since CEE writes to
-`OutputDebugString` rather than the event log — the script is in the gitignored
-`state/` evidence directory, so a fresh clone does not have it). Within one
-10-second cycle you want:
+restart the CEE service, and read its trace.
+
+**On Linux only.** `journalctl -u emc_cee` gives you the trace below. **On
+Windows you will get nothing, and that is not a failure signal** — `CAVA.exe`
+writes no diagnostic output at any level, including 63, on any channel:
+measured 2026-08-22 on 9.3.0.0 with both registry keys set and both services
+restarted, 150 s of `DBWIN_BUFFER` yielded only Monitor lines and no file was
+written anywhere. Do not change registry values on a Windows CEE host expecting
+a trace; you cannot distinguish "no trace facility" from "gate failed". Bring up
+against a Linux CEE if you need this step, and skip to Stage 1 otherwise.
+
+Within one 10-second cycle on Linux you want:
 
 ```text
 CEPPAPIWrapper[Audit][<name>][http://…]::Register(): Exit rpcStatus: 0, NtStatus: 0
 CEPPAPIWrapper[Audit][<name>][http://…]::HeartBeat(): Response: HB Status: 0 - CEPP_SERVICE_ONLINE
 ```
 
-Anything else is a gate in `cepa-protocol.md` you have not passed:
+Anything else is a gate in `cepa-protocol.md` you have not passed. Note this
+table covers gates 1-4 only: **gate 5 produces none of these traces**, and its
+only signatures are `0x1` with `auditStatus="0x1"` on `action="11"` replies and
+the array alert `0x01301b03 all_servers_unreachable`. Matching no row here does
+not mean every gate passes.
 
 | trace | fix |
 |---|---|
@@ -244,6 +255,13 @@ the note in `cepa-protocol.md`; a fresh clone does not have it):
 CEE answered: {'0x0 SUCCESS': 4}
 postSuccessEventsMissed: 0
 ```
+
+**Both of these stay green under a gate-5 failure, so they are not sufficient.**
+`0x0 SUCCESS` here is the heartbeat (`action="9"`) reply; the event
+(`action="11"`) reply is a different status the probe does not print, and
+`postSuccessEventsMissed` cannot climb because nothing ever succeeds. Confirm
+separately that the consumer has seen **more than one distinct file path** and
+more than one event type — under gate 5 it sees exactly one, forever.
 
 `0x16` means CEE has no registered partner — go back to Stage 0; nothing on the
 array will fix it. Counters *climbing* mean the array is healthy and generating

@@ -64,7 +64,7 @@ The reply carries the status the array acts on:
 | status | meaning | what it tells you |
 |---|---|---|
 | `0x0` | NORMAL | working — events will flow |
-| `0x1` | `VC_ERROR_SETUP` | CEE has the facility disabled, or the source is not valid/online |
+| `0x1` | `VC_ERROR_SETUP` | On heartbeats: CEE has the facility disabled, or the source is not valid/online. **On event replies (`action="11"`), with heartbeats still `0x0`: gate 5** — the consumer answered the batch with a bare 200 |
 | `0x10` | `VC_ERROR_BAD_REQUEST` | CEE could not build an event context; a *replayed* request lands here |
 | `0x12` | OFFLINE | a partner is registered but not answering heartbeats |
 | `0x16` | `VC_ERROR_CEPP_NOT_FOUND` | **no registered partner** — almost always leg 2 |
@@ -169,10 +169,17 @@ string order): `0 ONLINE, 1 OFFLINE, 2 UNREGISTER, 3 REREGISTER, 4 UNKNOWN`.
 
 Miss this and registration succeeds but the array gets `0x12 OFFLINE`.
 
-The separator between the two fields is `&`. This was a guess from the `xml=`
-form convention until it was tested against a live array on 2026-08-22: `&`
-gives `status="0x0"` on leg-1 heartbeats, and `\n` gives `0x12 OFFLINE` and the
-array stops publishing altogether. Do not "tidy" it.
+Use `&`. It is measured to work — leg-1 heartbeats return `status="0x0"` — and
+`\n` in its place was measured to give `0x12 OFFLINE` with the array ceasing to
+publish (2026-08-22, live array).
+
+**Why `\n` fails is not established, and the mechanism described above does not
+explain it.** A substring scan for `hbStatus=` and `ntStatus=` is
+separator-agnostic: `hbStatus=0\nntStatus=0` contains both. So either the parse
+also reads a value up to some specific delimiter — in which case "scans for" is
+too loose a description — or the `\n` trial failed for an unrelated reason not
+isolated at the time. Only `&` has been shown to work; treat the rest as
+unknown, and do not "tidy" it.
 
 ### Gate 4 — encoding
 
@@ -221,6 +228,15 @@ UTF-16 in `CEPPAPIWrapper.dll`, `CEPPFilter.dll`, `EvtCxt.dll`, `Convert.dll` or
 `CAVA.exe`. That absence was read once as proof the empty 200 was the whole
 contract — it is not proof of anything. CEE matches on the parsed document, not
 on a stored template. Only the wire settles this.
+
+**Mirror the request's encoding, as gate 4 requires.** The literal above is
+written UTF-8 for legibility; a UTF-16LE `<CheckEventRequest>` must be answered
+in UTF-16LE. Gate 4's worked example is about `<RegisterRequest />` and its
+failure mode (`Substring guid not found`) is registration-only, so nothing warns
+you here — an encoding mismatch on an event reply just lands you back in the
+silent failure above. The reference implementation transcodes on the shared
+reply path (`respond()` in `pkg/server/server.go`, `if parser.IsUTF16(reqBody)`)
+and sets `Content-Type: text/xml`.
 
 Note the asymmetry with gate 3: the heartbeat reply is a urlencoded form
 (`hbStatus=0&ntStatus=0`) and the event reply is XML. They are not the same
@@ -312,7 +328,9 @@ On Windows only the Monitor (`[EMC CEEM]`) was observed writing there;
 `CAVA.exe` stayed silent even at `Debug=3`. Getting the CEPA trace on Windows
 may need whatever Dell KB 000022982 describes. **Debug the protocol on Linux.**
 
-Re-measured at the maximum on 2026-08-22, CEE **9.2.0.0**, Windows Server 2025,
+Re-measured at the maximum on 2026-08-22, CEE **9.3.0.0**, Windows Server 2025
+(win25.diab.local — the same host the 9.3 bring-up used, and the host whose
+`ceeVersion="9.3.0.0"` appears in every capture in this document),
 because "the level was too low" is the obvious rebuttal and it is wrong:
 
 - `Debug=63` and `Verbose=63` set on both `HKLM:\SOFTWARE\EMC\CEE\Configuration`
@@ -329,8 +347,10 @@ because "the level was too low" is the obvious rebuttal and it is wrong:
   loaded, started after the registry change.
 
 So the trace table above — the one measured by replaying a heartbeat at each
-level — is a **Linux** measurement, and does not transfer. On 9.2.0.0 Windows
-there is no level at which CAVA explains itself. The instruction stands
+level — is a **Linux** measurement, and does not transfer. On 9.3.0.0 Windows
+there is no level at which CAVA explains itself. This refutes the claim on its
+own terms: `cee-9-3-windows-bring-up.md` said "the level was too low" about
+9.3.0.0, and this is 9.3.0.0 at the maximum level. The instruction stands
 unqualified: debug the protocol on Linux.
 
 ### `GET /vee` — CEE's own status document
@@ -385,6 +405,11 @@ Read cycle is stop → `etl2pcap` → restart.
 
 ## Things that are true but easy to get wrong
 
+- **Missed-event counters climbing does not always mean CEE is refusing.** Under
+  gate 5 CEE refuses nothing — it registers, answers heartbeats `0x0` and takes
+  every batch — and the array still counts the batch missed. Read a climbing
+  counter as "the array is generating events that are not landing", and check
+  gate 5 before concluding the refusal is on leg 1.
 - **`postSuccessEventsMissed` climbing means the array is healthy**, generating
   events, and being refused. It is a *good* sign when you are debugging CEE.
 - **`Get-NetTCPConnection` cannot see the array's sessions.** They are

@@ -118,12 +118,24 @@ The staged capture on `\\nas01.diab.local\SMB01` is no longer needed to *derive*
 the codes. It would still be worth one pass as confirmation if a client that can
 reach the share turns up — win25 **cannot** (checked).
 
-### 2. Understand the `0x1` on event deliveries
+### 2. The `0x1` on event deliveries — SOLVED, and it was total loss
 
-CEE answers heartbeats (`action="9"`) `0x0` but events (`action="11"`) `0x1
-VC_ERROR_SETUP`. Nothing is lost — `postSuccessEventsMissed` stays 0 and every
-event reaches the consumer — but it is not understood and should be before this
-is called production. Reproduce with `cepa_probe.sh 40`.
+**This entry previously said "nothing is lost". That was exactly wrong**, and it
+is worth recording why the reading was so confident: every consumer-side
+observable agreed with it. Events did reach the consumer, they were written, and
+counters climbed.
+
+`action="11"` answered `0x1` with `auditStatus="0x1"` means the consumer replied
+to `<CheckEventRequest>` with a bare HTTP 200, which CEE reads as a failed
+delivery. The array counts the batch missed and retries **the same event**
+forever, so its queue head never clears and nothing behind it is ever sent. On
+this estate that ran for eight days: one event from 2026-08-14 redelivered every
+heartbeat, and no other event ever — while `postSuccessEventsMissed` stayed at 0,
+because nothing ever succeeded to be counted.
+
+Answer with `<CheckEventResponse status="0x0"/>`, mirroring the request
+encoding. Fixing it flushed 1780 events across 14 event types in 30 seconds.
+See **gate 5** in `docs/cepa-protocol.md`.
 
 ### 3. Get the identity into Ansible — DONE
 

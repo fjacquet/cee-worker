@@ -235,6 +235,10 @@ that read it could not pass on any real host.
   uses `PeerSoftwareCollector` + `49f4da0f-055f-401c-9f83-a95ce61447f6`.
   Registering is still not enough — CEE then probes with `<HeartBeatRequest />`
   and needs `hbStatus=0`, or the partner stays OFFLINE and the array gets `0x12`.
+  `cee_common/tasks/assert_partner_identity.yml` enforces the name half of this
+  (the 27 distinct Audit identities) before the playbook touches a host; it runs
+  last in `cee_common` because checking only the Audit half is correct only once
+  `assert_facilities` has established Audit is the enabled sub-facility.
 - **A bare HTTP 200 does not acknowledge an event batch.** `<CheckEventRequest>`
   must be answered with `<CheckEventResponse status="0x0"/>`. CEE reads an empty
   body as a failed delivery, tells the array `auditStatus="0x1"`, and the array
@@ -246,13 +250,11 @@ that read it could not pass on any real host.
   reads as a network fault and is not one. Fixing it flushed 1780 events across
   14 event types in 30 seconds. **This is gate 5 in `docs/cepa-protocol.md` and
   the single most consequential rule in the protocol.** Do not look for a
-  `CheckEventResponse` literal in CEE's binaries to confirm it — there is none,
-  in either encoding, in any of them; that absence was once read as proof the
-  empty 200 was correct. Only the wire settles this.
-  `cee_common/tasks/assert_partner_identity.yml` enforces the name half of this
-  (the 27 distinct Audit identities) before the playbook touches a host; it runs
-  last in `cee_common` because checking only the Audit half is correct only once
-  `assert_facilities` has established Audit is the enabled sub-facility.
+  `CheckEventResponse` literal in CEE's binaries to confirm it — it is absent, in
+  both encodings, from all five Windows DLLs examined (`CEPPAPIWrapper.dll`,
+  `CEPPFilter.dll`, `EvtCxt.dll`, `Convert.dll`, `CAVA.exe`); the Linux rpm was
+  not searched, and `bin/` no longer ships it. That absence was once read as
+  proof the empty 200 was correct. Only the wire settles this.
 - **The event bitmask, the status codes and the facility numbers are all
   readable from `libConvert.so`** in the vendored rpm, via `GetEventDescr8`,
   `GetVCStatusDescr` and `GetFacilityIDDescr` — each a jump table or a compare
@@ -263,7 +265,10 @@ that read it could not pass on any real host.
   Dell's prose — it has been wrong here in both directions.
 - **`Debug`/`Verbose` are a 6-bit mask, not a scale.** `1` prints the banner
   only, `9` prints *less* than `3`, and **63** is the maximum — the level at
-  which CEE names the reason it refused a partner. Three bring-ups concluded
+  which CEE names the reason it refused a partner. **Linux only.** On Windows
+  `CAVA.exe` is silent at every level including 63, on every channel, measured
+  2026-08-22 on 9.3.0.0 — do not change registry values and restart services
+  expecting a trace there. Debug the protocol on Linux. Three bring-ups concluded
   "CEE tells you nothing" on the strength of `Debug=1`.
 - **The CEPA consumer contract is readable from the vendored rpm.** Dell
   publishes no protocol specification and CEE on Windows writes no log at
