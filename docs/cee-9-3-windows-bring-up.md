@@ -99,6 +99,15 @@ not forward events to a server whose heartbeat it cannot complete.
 
 ## The Windows debugging method from the first bring-up does not exist
 
+> **Wrong on both counts, corrected 2026-08-22.** Windows CEE *does* emit a
+> trace — to `OutputDebugString` (the `DBWIN_BUFFER` channel Sysinternals
+> DebugView reads), not to the Application event log this section searched. And
+> `Debug=1` is far too low: `Debug`/`Verbose` are a 6-bit mask where `9` prints
+> less than `3` and only **63** names the reason CEE refuses a partner. The
+> conclusion below — "the wire is the only instrument" — sent two bring-ups
+> looking at packets when CEE would have said what was wrong. See
+> `cepa-protocol.md`.
+
 `cepa-bring-up-findings.md` establishes that CEE 9.2 writes nothing to the
 journal at the shipped `Debug=0`/`Verbose=0`, and that every root cause in that
 document came from turning both on. **On Windows there is no equivalent to

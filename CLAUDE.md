@@ -297,35 +297,44 @@ that read it could not pass on any real host.
 
 ## Docs and conventions
 
+**Start here for anything CEPA-related.** These two supersede everything below
+wherever they disagree:
+
+- `docs/cepa-protocol.md` — **the protocol reference.** Both legs, the four
+  gates a consumer must pass, the status-code table, the encoding rules, the
+  diagnostic toolkit (`Debug=63`, `cepa_probe.sh`, `dbgcapture.ps1`) and a
+  failure-signature → cause table. Written so you never have to read the
+  session history to operate this.
+- `docs/cee-partner-allowlist.md` — the 47 identities CEE will register, by
+  facility, with GUIDs, and how the table was extracted and validated. Read
+  before changing anything about the consumer's identity.
+
+**Operational:**
+
 - `docs/ansible-deployment.md` — prerequisites, setup, troubleshooting
-- `docs/powerstore-setup-runbook.md` — the array side + end-to-end event test
-- `docs/cepa-bring-up-findings.md` — what the first real-array bring-up
-  measured (CEE 9.2.0.0 on SLES). Read before touching anything
-  array-facing.
-- `docs/cee-9-3-windows-bring-up.md` — the second bring-up (CEE 9.3.0.0 on
-  Windows Server 2025). Why `Debug`/`Verbose` are inert on Windows and the
-  wire is the only instrument, why `pktmon` must be stopped before a
-  capture reads as non-empty, CEE 9.3 rejecting OneFS heartbeats with HTTP
-  400, and the OneFS `eventType` table resolved in full.
+- `docs/powerstore-setup-runbook.md` — the array side plus the end-to-end test.
+  Its **Step 0 and Stage 0** are the consumer identity; skipping them fails
+  silently with every observable green.
+- `docs/acceptance-tests.md` — the acceptance plan. Predates the first
+  successful run and is explicit about which of its tests have genuinely
+  executed. Don't upgrade any of them silently.
+
+**Historical record** — how this was worked out, wrong turns included. Each
+carries corrections layered on corrections; read them for the reasoning, not
+for current facts:
+
+- `docs/cepa-bring-up-findings.md` — first bring-up (CEE 9.2.0.0 on SLES). The
+  access-list-takes-FQDNs finding is here. Its closing conclusion — that the
+  fault was array-side event generation — is marked wrong.
+- `docs/cee-9-3-windows-bring-up.md` — second bring-up (CEE 9.3.0.0 on Windows
+  Server 2025). The `pktmon` stop-before-reading trap, CEE serving `/vee` while
+  OneFS posts to `/`, and the OneFS `eventType` table resolved in full. Its
+  claim that `Debug`/`Verbose` are inert on Windows is wrong twice over: the
+  channel is `OutputDebugString`, not the event log, and the level was too low.
 - `docs/cepa-2026-08-22-powerstore-session.md` — **the session that solved it.**
-  `CEPP_NOT_FOUND` was CEE refusing an unlisted partner identity. Read its
-  "Corrections to earlier documents" before trusting host facts in the two
-  bring-up documents, and its `Debug=63` note before concluding CEE is silent.
-  Carries the reusable `cepa_probe.sh` measurement loop.
-- `docs/cee-partner-allowlist.md` — the 47 identities CEE will register, keyed
-  by facility, extracted from `CGuidStore::Init()`. Read this before changing
-  anything about the consumer's identity.
-- `docs/superpowers/specs/2026-08-10-cepa-wire-protocol.md` — the CEE→consumer
-  leg. Carries a correction dated 2026-08-21: its original "reply with an
-  empty body" conclusion was wrong and is the reason two bring-ups ended
-  silent. Read the correction, not just the summary.
-- `docs/acceptance-tests.md` — the plan for the first live deployment.
-  Install, configuration and verification have run against real RHEL 9,
-  SLES 15 and Windows Server hosts. **The end-to-end event path is now
-  proven too** (2026-08-22): PowerStore SMB activity → NAS01 → CEE 9.3 on
-  Windows → cee-exporter → binary `.evtx` read back by `Get-WinEvent` on
-  Windows Server 2025. That document predates the run and still describes
-  Stage 3 as outstanding; the session document is the current record.
+  Read its "Corrections to earlier documents" before trusting host facts in
+  either bring-up document.
+
 - `docs/cee-8-x-linux-guide_en-us.pdf` covers CEE **8.x** while the rpm is
   **9.2.0.0**. Config and security semantics diverged (secure defaults).
   Treat it as a general reference, cross-check anything config-related.

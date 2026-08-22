@@ -30,6 +30,39 @@ AT-8, AT-10 and AT-11 there.
 
 Perform these in order. Each step depends on the previous one.
 
+> **Step 0 is on the CEE host, not the array, and skipping it guarantees
+> failure.** CEE only forwards events to a consumer it has registered, and it
+> only registers an identity present in its compiled-in allowlist. Get this
+> wrong and every step below still "succeeds": the array publishes nothing, CEE
+> answers `0x16`, and every observable stays green. This cost three bring-ups.
+> Do it first and verify it with Stage 0 before touching the array.
+
+0. **Give the consumer an identity CEE will accept.** Pick a row from
+   `docs/cee-partner-allowlist.md` whose facility is the one you enabled
+   (Audit, for this repo), then set the same name on both sides:
+
+   - consumer (`cee-exporter-config.toml`):
+
+     ```toml
+     [cepa]
+     friendly_name = "PeerSoftwareCollector"
+     guid          = "49f4da0f-055f-401c-9f83-a95ce61447f6"
+     ```
+
+   - CEE (`ansible/group_vars/all.yml`, applied by `cee_configure`):
+
+     ```yaml
+     cee_endpoints:
+       - name: PeerSoftwareCollector      # must match friendly_name above
+         host: 10.26.1.221
+         port: 12229
+     ```
+
+   These are other vendors' registered identities; there is no mechanism for a
+   third-party consumer to obtain its own. Choose deliberately — CEE will report
+   your consumer under that name, and it collides with a genuine deployment of
+   that product on the same CEE host.
+
 1. **Enable Events Publishing on the NAS server.**
    Navigate to the NAS server, then *Security & Events* → *Events
    Publishing*. Enable it.
@@ -56,8 +89,38 @@ Perform these in order. Each step depends on the previous one.
 
 ## Verification
 
-Three stages, in order. Each isolates one leg, so a failure tells you
-which side is broken rather than only that something is.
+Four stages, in order. Each isolates one leg, so a failure tells you which side
+is broken rather than only that something is.
+
+### Stage 0 — CEE accepts the consumer
+
+Do this before the array is involved at all; it needs nothing but the two hosts.
+On the CEE host, temporarily raise the debug level to the only one that
+explains a refusal (`Debug` is a 6-bit mask — `1` says nothing and `9` says less
+than `3`):
+
+    # Linux:   <Debug>63</Debug> and <Verbose>63</Verbose> in emc_cee_config.xml
+    # Windows: HKLM\SOFTWARE\EMC\CEE\Configuration\Debug = 63 (and Verbose)
+
+restart the CEE service, and read its trace (Linux: `journalctl -u emc_cee`;
+Windows: `dbgcapture.ps1`, since CEE writes to `OutputDebugString` rather than
+the event log). Within one 10-second cycle you want:
+
+    CEPPAPIWrapper[Audit][<name>][http://…]::Register(): Exit rpcStatus: 0, NtStatus: 0
+    CEPPAPIWrapper[Audit][<name>][http://…]::HeartBeat(): Response: HB Status: 0 - CEPP_SERVICE_ONLINE
+
+Anything else is a gate in `cepa-protocol.md` you have not passed:
+
+| trace | fix |
+|---|---|
+| `Top node is not RegisterResponse` | consumer returned an empty body |
+| `unknown or invalid GUID` | the name is not in the allowlist for that facility |
+| `GUID mismatch` | right name, wrong GUID for it |
+| `Substring guid not found` | you answered UTF-16 to a UTF-8 request |
+| `HB Status: 1 - CEPP_SERVICE_OFFLINE` | consumer is not answering `<HeartBeatRequest />` |
+
+Set `Debug`/`Verbose` back to `0` when you are done; they are diagnostic, not a
+steady-state setting.
 
 ```mermaid
 flowchart TD
@@ -163,6 +226,19 @@ Common Stage 2 failures:
   cee-exporter's log.
 
 ### Stage 3 — the PowerStore → CEE leg
+
+The authoritative check is the `status` attribute in CEE's reply to the array's
+heartbeat, which is the value the array itself acts on. `cepa_probe.sh` in
+`state/cepa-evidence-2026-08-22/` captures it in one command and also prints the
+array's own missed-event counters:
+
+    CEE answered: {'0x0 SUCCESS': 4}
+    postSuccessEventsMissed: 0
+
+`0x16` means CEE has no registered partner — go back to Stage 0; nothing on the
+array will fix it. Counters *climbing* mean the array is healthy and generating
+events that CEE is refusing, which is useful progress information rather than an
+array fault. See the status table in `cepa-protocol.md`.
 
 On a client with the monitored filesystem mounted, create and delete a
 file:
