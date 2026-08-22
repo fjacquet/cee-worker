@@ -311,6 +311,9 @@ wherever they disagree:
 
 **Operational:**
 
+- `docs/cepa-next-steps.md` — working handover: what is done, what is open, the
+  environment, and the traps. Transient; delete it when the open items close.
+
 - `docs/ansible-deployment.md` — prerequisites, setup, troubleshooting
 - `docs/powerstore-setup-runbook.md` — the array side plus the end-to-end test.
   Its **Step 0 and Stage 0** are the consumer identity; skipping them fails
