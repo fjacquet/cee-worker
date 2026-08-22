@@ -10,6 +10,126 @@ Dell CEE build and the useful version to know is CEE's own.
 
 ## [Unreleased]
 
+## [9.2.0.4] - 2026-08-22
+
+**The event path works end to end for the first time.** SMB activity on a
+PowerStore NAS server reaches the consumer through CEE and is written as
+`.evtx`, verified with `Get-WinEvent` on Windows Server 2025. What had blocked
+it for three bring-ups was not the array.
+
+### Added
+
+- `docs/cepa-protocol.md` — the working reference for the CEE event path:
+  both legs, the four gates a consumer must pass, the status-code table,
+  the encoding rules, the diagnostic toolkit and a failure-signature →
+  cause table. Read this rather than the dated session documents.
+- `docs/cee-partner-allowlist.md` — the 47 identities CEE will register,
+  by facility, with GUIDs, extracted from `CGuidStore` in the vendored
+  rpm and cross-validated against Dell KB 000049515.
+- `cee_common/tasks/assert_partner_identity.yml` — rejects any
+  `cee_endpoints[].name` outside the 27 identities CEE registers for Audit,
+  before the playbook touches a host. It runs last in `cee_common`, after
+  `assert_facilities` has established Audit is the enabled sub-facility,
+  which is what makes checking only the Audit half correct. Covered by
+  `ansible/tests/test_partner_identity.yml` and mutation-tested.
+  `cee_partner_allowlist_extra` exists only for an identity added in a CEE
+  release newer than the vendored 9.2.0.0.
+- `[cepa]` identity block in `cee-exporter-config.toml`, and Step 0 /
+  Stage 0 in `docs/powerstore-setup-runbook.md` covering it.
+- Windows hosts can now target a CEE release that is not vendored in
+  `bin/`. `cee_windows_version` and `cee_windows_product_id` are a
+  required pair in `group_vars/cee_windows.yml`; `cee_install` skips
+  staging when the ProductCode is already registered and asserts the
+  registry `Version` against the targeted release either way. Gated by
+  `cee_preflight/tasks/assert_required_vars_windows.yml`, covered by
+  `ansible/tests/test_required_vars.yml`.
+- Optional `cee_windows_service_account` / `cee_windows_service_password`,
+  the vendor's install-completion step. `cee_configure` grants
+  `SeServiceLogonRight` before setting the account, because `win_service`
+  does not and the Services MMC does. Leaving both unset does not revert
+  a host configured by hand.
+- `docker-compose.ports.yml` — publishes cee-exporter on 12228 as well as
+  12229, so an array can use the CEPA default port.
+- `bin/README.md` — what to supply in `bin/`, under which filenames, and
+  why each glob requires exactly one match.
+- `docs/cee-9-3-windows-bring-up.md` and
+  `docs/cepa-2026-08-22-powerstore-session.md` — the session record of the
+  later two bring-ups, wrong turns included. `docs/cepa-next-steps.md` is
+  the transient handover; delete it when its open items close.
+- `docs/cee-9-x-windows-guide_en-us.pdf` — the 9.x Windows guide, the
+  source for the AccessList and service-account rules cited above. The
+  8.x Linux guide stays as a general reference only.
+
+### Changed
+
+- **Dell's installers are no longer tracked.** `bin/*.rpm`, `bin/*.exe`
+  and `bin/*.iso` are gitignored and the Git LFS filters are gone: they
+  are Dell's to distribute and need an entitled portal account. A fresh
+  clone has an empty `bin/`; supply the media yourself. The artefacts
+  remain in history, so nothing was rewritten and older commits still
+  check out correctly. This retires the `!filter !diff !merge` exemption
+  added in 9.2.0.3 — untracking dissolves the same phantom diff at its
+  source.
+- **`publish.yml` can no longer build the GHCR image on a stock runner.**
+  It fails at an explicit guard step naming the missing rpm, rather than
+  at the Dockerfile's `COPY`. The guard enforces the same contract as
+  `install_linux_locate.yml`: exactly one match, and `file` must report an
+  rpm. Restoring the job needs a runner that supplies the artefact.
+- **The access list has an answer, not just an "off".** 9.2.0.3 reversed
+  this repo's advice to "expect to need `cee_access_list_enabled: 0`". The
+  durable fix is now known and tested: the list holds **FQDNs**, not IP
+  addresses — plus the node addresses for PowerScale, which has no PTR
+  records to be matched by name. Populate it with names and set the flag
+  back to 1; 0 is a bring-up state, not a destination.
+
+### Fixed
+
+- **CEE refuses to register a consumer whose identity it does not already
+  know**, which is what produced `0x16 CEPP_NOT_FOUND` across three
+  bring-ups. `CGuidStore` maps *(friendlyName, facility)* → GUID and is
+  compiled into `libCEPPAPIWrapper.so`; a self-generated GUID can never
+  work. With `PeerSoftwareCollector` and its Audit GUID, PowerStore →
+  CEE → cee-exporter → `.evtx` runs end to end for the first time.
+  `all.yml.example` no longer ships the invented `ceeexporter` name.
+- **`docs/cepa-2026-08-22-powerstore-session.md` claimed CEE has no vendor
+  allowlist** and that "an OSS consumer is not locked out by identity" —
+  the exact inverse of the truth, and an operator following it recreates
+  `0x16` with every observable green. Retracted in place, struck through
+  rather than deleted, because the way it was wrong is instructive: its
+  observation was right that the package holds exactly one GUID *literal*,
+  but the partner GUIDs are not literals. They are immediate operands
+  pushed onto the stack in `CGuidStore::Init()`, so they exist in `.text`
+  as instruction bytes and never as text.
+- **The `event` bitmask is 19 bits, mask `0x7FFFF`** — not the 21 /
+  `0x1FFFFF` previously documented, of which only bit 3 had been measured.
+  Read from `GetEventDescr8` in `libConvert.so`. Dell's documented
+  ordering is right for all nineteen; its trailing `OpenFileReadOffline`
+  and `OpenFileWriteOffline` do not exist in CEE 9.2.0.0. Bit 3 resolves
+  to `FileCreate`, matching the one bit confirmed by capture.
+- **The facility numbering in `cee-partner-allowlist.md` was mislabelled.**
+  Facility 1 was called CAVA, 3 CQM and 6 Index; from
+  `GetFacilityIDDescr` they are CQM, Index and CARA. The numbers were
+  always right and only the names were guessed, so nothing operational
+  changed — Audit is 2 either way — but no CGuidStore entry uses facility
+  0, meaning there are no CAVA partners at all.
+- **`Debug`/`Verbose` are a 6-bit mask, not a scale.** `1` prints the
+  banner only and `9` prints less than `3`; `63` is the maximum and the
+  only level at which CEE names the reason it refused a partner. The
+  runbook's troubleshooting section said `1`.
+- **`docs/superpowers/specs/2026-08-10-cepa-wire-protocol.md` stated the
+  inverse of the truth** — "reply with an empty body" — and that error
+  cost two bring-ups. Corrected in place, with the original kept.
+- **Blank Windows variables are rejected.** `is defined` accepts an empty
+  string, and an empty `cee_windows_product_id` renders as the bare
+  `...\Uninstall` parent key, which exists on every Windows host — so
+  `win_reg_stat` reports it present, the play concludes CEE is already
+  installed and skips staging entirely. Blank and whitespace-only values
+  are now refused for the version pair and for each service credential.
+- `!override` in `docker-compose.ports.yml` needs Compose **v2.24.4**, not
+  v2.24: the tag arrived in compose-go v2.0.0-rc.3, which Compose first
+  bundled in v2.24.4. v2.24.0–.3 look close enough to work and silently
+  merge the port lists instead.
+
 ## [9.2.0.3] - 2026-08-13
 
 ### Added

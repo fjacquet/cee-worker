@@ -10,10 +10,20 @@ Everything below was measured on those hosts — tcpdump on the wire, CEE's own
 debug journal, `isi_audit_viewer` on the cluster. Where a claim is an
 inference rather than a measurement it says so.
 
-**Outcome: Stage 3 of `powerstore-setup-runbook.md` is still unproven.** No
-array-originated event has ever reached the consumer *through CEE*. Stages 1
-and 2 pass. What changed is that the failure is localised, and it is two
-distinct faults, not one:
+> **Superseded on the central question, 2026-08-22.** Stage 3 is now proven,
+> and the PowerStore half of the outcome below — that the remaining fault was
+> array-side event *generation* — was wrong. The array was generating events
+> all along; CEE was refusing to register the consumer and telling the array
+> it had no CEPA configuration, so the array discarded them. The PowerScale
+> half was closer: CEE really did refuse that handshake, and for the same
+> underlying reason, an identity it would not register. See
+> `cepa-2026-08-22-powerstore-session.md` and `cee-partner-allowlist.md`.
+> Everything else measured here still stands.
+
+**Outcome (as recorded on 2026-08-12): Stage 3 of
+`powerstore-setup-runbook.md` is still unproven.** No array-originated event
+has ever reached the consumer *through CEE*. Stages 1 and 2 pass. What changed
+is that the failure is localised, and it is two distinct faults, not one:
 
 - **PowerStore** connects, heartbeats cleanly and generates no events. Every
   leg this repo controls is verified working, so the remaining fault is
@@ -53,12 +63,35 @@ versions — independently lists `AccessListEnabled ≠ 0` as one of three cause
 of "pool reachable but zero events", alongside `ServerEnabled ≠ 1` and a
 blocked inbound 12228.
 
-**Not yet established:** whether populating the list with NAS *server names*
-rather than addresses makes it work. That is the obvious next experiment and
-it was not run. Until someone runs it, treat `AccessListEnabled=1` as
-incompatible with an address-based list, and understand that turning it off
-removes a real access control — CEE will accept CEPA posts from anything that
-can reach 12228, so the firewall becomes the only gate.
+**Resolved 2026-08-14 — the list takes FQDNs.** The experiment named below
+was overtaken by reading the vendor documentation, which states it outright:
+
+> Set the **AccessList** REG_SZ option to the list of **FQDNs** from which CEE
+> accepts messages. You can designate multiple FQDNs by separating them with
+> semicolons (;).
+>
+> NOTE: The AccessList for **PowerScale** products must *also* contain the **IP
+> addresses** from which CEE accepts messages.
+>
+> — *Using the Common Event Enabler on Windows Platforms* 9.x, rev 24, p22
+
+That is the whole explanation, and it fits every observation above. CEE named
+the server rather than the source because names are what it matches. It said
+`server [] event not allowed` for PowerScale because OneFS supplies no name it
+can parse — which is also why Dell carves PowerScale out as the exception that
+must be listed by address. And the four cluster nodes here have no PTR records
+at all, so there is no name available to list even if CEE would take one.
+
+So `AccessListEnabled=1` was never the wrong posture; the list contents were.
+The correct list for this estate is `nas01.diab.local` — verified to resolve to
+10.26.1.224 forward and reverse on 10.26.1.50, and the exact string CEE printed
+when refusing — plus the four PowerScale node addresses.
+
+`group_vars/all.yml` now carries those contents. It is still set to `0` only
+because PowerStore stopped heartbeating after being repointed, and re-arming a
+rejection mechanism mid-fault would add a variable to a problem upstream of CEE.
+Turning it back to `1` is the last step of the bring-up: at `0`, CEE accepts
+CEPA posts from anything that can reach 12228 and the firewall is the only gate.
 
 ## CEE 9.2.0.0 logs no request traffic unless Debug and Verbose are on
 
@@ -113,6 +146,14 @@ Eliminated by measurement, each with its own test:
 
 That leaves event generation on the array. It is a Dell support case, and the
 evidence above is what to hand them.
+
+> **Wrong.** The array was generating events correctly; they were being
+> discarded because CEE answered `CEPP_NOT_FOUND`. The elimination table above
+> is sound — every row of it was tested — but it has a missing row: the
+> consumer's *identity*, which CEE validates against a compiled-in allowlist.
+> Nothing in the table could have found that, because every test in it used the
+> same rejected identity. When a table of eliminations leaves only one suspect,
+> consider that the table may be missing a row.
 
 ### Verify the test actually wrote something
 

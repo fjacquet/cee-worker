@@ -22,10 +22,43 @@ cee_https_port: 12443
 #
 # ORDER MATTERS: CEE monitors the first endpoint to decide whether to
 # publish at all. If the first one is down, no endpoint receives events.
+#
+# `name` IS NOT FREE-FORM. It is the partner id CEE registers the consumer
+# under, and CEE only registers identities present in `CGuidStore`, a table
+# of 47 (friendlyName, facility) → GUID rows compiled into
+# libCEPPAPIWrapper.so. Pick a row whose facility is the one enabled below
+# (Audit), and set the same name — and its paired GUID — on the consumer:
+#
+#   cee-exporter-config.toml
+#     [cepa]
+#     friendly_name = "PeerSoftwareCollector"
+#     guid          = "49f4da0f-055f-401c-9f83-a95ce61447f6"
+#
+# An invented name (this file used to ship `ceeexporter`) is refused with
+# `Partner error, unknown or invalid GUID`, no partner is registered, and
+# CEE then answers every array heartbeat `0x16 CEPP_NOT_FOUND` — the array
+# discards every event it generates while the playbook, the service, the
+# port and the firewall all report healthy. That cost three bring-ups. The
+# full table, its provenance and the caveat about using another vendor's
+# registered identity are in docs/cee-partner-allowlist.md.
+#
+# cee_common now enforces this: assert_partner_identity.yml rejects any
+# endpoint name that is not one of the 27 identities CEE registers for Audit.
+# The comment above is not the guard — that task is.
 cee_endpoints:
-  - name: ceeexporter
+  - name: PeerSoftwareCollector   # must be an allowlisted partner id for
+                                  # the enabled facility, and must match
+                                  # friendly_name on the consumer
     host: 10.10.10.10     # the Docker host running cee-exporter
     port: 12229           # host-published port, maps to container 12228
+
+# Additional partner identities to accept, beyond the ones read out of the
+# vendored CEE 9.2.0.0 rpm. Leave empty unless you are deploying against a
+# newer CEE whose CGuidStore has grown a row — that is the only case this is
+# for. It is not a way to make an invented name work: CEE's table is compiled
+# in, and adding a name here that CEE does not know only moves the failure
+# from the playbook back to where it was, silent and array-side.
+# cee_partner_allowlist_extra: []
 
 # Open cee_http_port in firewalld on the CEE host. RHEL 9 ships firewalld
 # enabled with only ssh allowed, and cee_verify probes 127.0.0.1 — a path
@@ -36,18 +69,48 @@ cee_endpoints:
 # ansible.posix collection: see ansible/requirements.yml.
 cee_manage_firewall: true
 
-# Restrict which sources may post events. 1 is the vendor default, but it
-# has never been made to work: measured on real PowerStore and PowerScale
-# arrays, 1 with an address-populated list refuses every array and the array
-# then never publishes at all. Expect to need 0, and understand that 0
-# leaves the firewall the only gate on who may post to 12228.
-# See docs/cepa-bring-up-findings.md for the measurement and the untested
-# server-name alternative.
+# Restrict which sources may post events. 1 is the vendor default and the
+# right posture on a real network. Set to 0 only to isolate a bring-up
+# problem, then set it back.
+#
+# THIS LIST HOLDS FQDNs, NOT IP ADDRESSES. Getting that wrong is the single
+# most expensive mistake available here, because the symptom looks like a
+# network fault rather than a config one: CEE refuses the array's CEPA
+# heartbeat with
+#
+#   CTransport+::ValidateArgs(): PowerStore BAD CEPP_HEARTBEAT request
+#   (server [NAS01] event not allowed)
+#
+# naming the NAS *server*, and the array then reports its publishing pools
+# unavailable and never publishes at all. An address that demonstrably did
+# send the heartbeat is still rejected. Measured against real PowerStore
+# and PowerScale arrays on 2026-08-12, and documented by Dell: "Set the
+# AccessList REG_SZ option to the list of FQDNs from which CEE accepts
+# messages" (Using the Common Event Enabler on Windows Platforms 9.x, rev
+# 24, p22).
+#
+# The one exception is also Dell's: "The AccessList for PowerScale products
+# must ALSO contain the IP addresses from which CEE accepts messages." So a
+# mixed estate lists NAS-server FQDNs *and* every OneFS node address. That
+# asymmetry is not arbitrary — OneFS nodes here have no PTR records at all,
+# so there is no name for CEE to match them by.
+#
+# List every publishing source. A OneFS cluster runs one forwarder per
+# node and publishes from each node address independently, not just from
+# the one you configured it through.
+#
+# Set this to 0 only to isolate a bring-up problem, and treat setting it
+# back as part of finishing the job: 0 leaves the host firewall as the only
+# gate on who may post to 12228.
 cee_access_list_enabled: 1
 # Every publishing source, one per line. Only consulted when the flag above
 # is 1.
 cee_access_list:
-  - 10.20.30.40           # PowerStore NAS server address
+  - nas01.example.com     # PowerStore NAS server FQDN — a name, not an address
+  - 10.20.30.41           # PowerScale node 1 — OneFS is the documented
+  - 10.20.30.42           # PowerScale node 2   exception: addresses, and
+  - 10.20.30.43           # PowerScale node 3   every node, not just one
+  - 10.20.30.44           # PowerScale node 4
 
 # Exactly one sub-facility should be true. Audit is the synchronous
 # real-time path cee-exporter speaks. VCAPS is async bulk delivery and

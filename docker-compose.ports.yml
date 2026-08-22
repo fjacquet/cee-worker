@@ -1,0 +1,32 @@
+# Publishes cee-exporter on 12228 as well as 12229, so an array can be pointed
+# at it using the CEPA default port and only the server address has to change.
+#
+# 12229 exists in docker-compose.test.yml because the exporter and a
+# containerised CEE once shared this host and could not both own 12228. CEE now
+# runs on its own VM (win25), so 12228 is free here — but 12229 is kept so
+# nothing already pointed at it breaks.
+#
+# THE SERVICE ARGUMENT IS NOT OPTIONAL. docker-compose.test.yml still defines a
+# `cee` service publishing 12228:12228 — the containerised CEE this file assumes
+# is gone. Bringing the whole stack up with this overlay makes both containers
+# claim host 12228 and the second to start dies with "port is already
+# allocated". Scope every invocation to the exporter, or drop the `cee` service
+# from the stack first.
+#
+# Deliberately NOT named docker-compose.override.yml: that filename is
+# auto-loaded by every `docker compose` invocation in this directory, including
+# ones targeting docker-compose.yml, where these services do not exist.
+# Pass it explicitly, and name the service:
+#   docker compose -f docker-compose.test.yml -f docker-compose.ports.yml up -d cee-exporter
+#
+# `!override` needs Compose v2.24.4 or newer; on an older one the two port
+# lists merge instead and 12228 is published twice. The exact floor matters
+# because v2.24.0 through v2.24.3 look close enough to work and do not: the
+# tag was added in compose-go v2.0.0-rc.3, and Compose only bundled that from
+# v2.24.4 (v2.24.0 shipped beta.3, .1 rc.1, .2 rc.2).
+services:
+  cee-exporter:
+    ports: !override
+      - "9228:9228"
+      - "12229:12228"
+      - "12228:12228"

@@ -11,10 +11,12 @@ configuration and verification against a real host: a single
 SLES 15 SP7 and Windows Server 2025 Datacenter hosts in the same play
 (recap of the last run: `rhel ok=61 changed=2 failed=0`,
 `sles ok=60 changed=2 failed=0`, `winvm ok=56 changed=2 failed=0`). What
-that does **not** prove: no PowerStore array has ever been in the loop
-on any platform, so the actual event path is unverified — see the
-Windows section below and `docs/acceptance-tests.md` for exactly what is
-and is not established.
+that does **not** prove: the playbook does not exercise the event path.
+That path has since been proven separately (2026-08-22, PowerStore →
+CEE → cee-exporter → `.evtx` read by `Get-WinEvent`), but it needed one
+thing the playbook cannot supply — a consumer identity CEE will accept.
+See `docs/cee-partner-allowlist.md` and
+`docs/cepa-2026-08-22-powerstore-session.md`.
 
 ## Prerequisites
 
@@ -28,17 +30,22 @@ and is not established.
   CEE will now terminate.`, unless they see the right product string.
   Windows **client** editions are rejected the same way `cee_preflight`
   rejects a Linux rebuild — Windows **Server** only.
-- **Git LFS on the control node.** `bin/*.rpm` and `bin/*.exe` are
-  tracked with Git LFS (see `.gitattributes`). Run
-  `git lfs install && git lfs pull` right after cloning. Skip it and the
-  SLES rpm (and the Windows exe) are ~130-byte pointer files, not the
-  real package — `cee_install`'s SLES and Windows branches will each find
-  exactly one file (the pointer passes the uniqueness check unaltered)
-  and hand it to `zypper` or `win_package`, which then fails confusingly
-  on a file that isn't a real rpm/exe. The RHEL rpm predates LFS in this
-  repo's history and stays a plain blob, so **this only bites the SLES
-  and Windows paths** — a RHEL-only clone can look fine while silently
-  missing the guard for the other two.
+- **The Dell installers on the control node.** They are **not** tracked in
+  this repo (see `bin/README.md`); a fresh clone has an empty `bin/`.
+  Download the CEE 9.2.0.0 artefacts for the platforms you deploy from
+  Dell's support portal and put them there, under the exact filenames the
+  globs expect.
+
+  Get this wrong and the failure is early and clear rather than silent:
+  `install_linux_locate.yml` asserts **exactly one** match for its
+  platform's glob and names the count it found. The one case that is *not*
+  clear is a leftover Git LFS pointer file — if you have an old clone whose
+  `bin/*.rpm` or `bin/*.exe` is a ~130-byte pointer rather than the real
+  package, it passes the uniqueness check unaltered and is handed to
+  `zypper` or `win_package`, which then fails confusingly on a file that is
+  not an rpm or an exe. Check with `file bin/*` before deploying; a real
+  artefact reports `RPM v3.0` or a PE executable, a pointer reports
+  `ASCII text`.
 - Time synchronised across the PowerStore array, the CEE host, and the
   consumer host
 - SMB configured on PowerStore; NFS optional. Not a preference — an NFS-only
@@ -71,11 +78,18 @@ reachable UBI 9 repositories for RHEL dependency resolution.
 
 ## Setup
 
-Pull the LFS-tracked vendor artefacts first, if not already present
-(see Prerequisites above for what breaks without this):
+Put the Dell artefacts in place first — they are not in the repo, so a fresh
+clone has an empty `bin/` and every platform branch fails at its glob until
+you do (see Prerequisites above). Download the CEE 9.2.0.0 media you need from
+Dell's support portal and copy it in under the exact filenames:
 
-    git lfs install
-    git lfs pull
+    cp emc_cee_RHEL-9.2.0.0.x86_64.rpm  bin/    # RHEL 9 targets
+    cp emc_cee_SLES-9.2.0.0.x86_64.rpm  bin/    # SLES 15 targets
+    cp EMC_CEE_Pack_x64_9_2_0_0.exe     bin/    # Windows Server targets
+    file bin/*                                  # each must report RPM v3.0 / PE, never "ASCII text"
+
+Only the platforms you actually deploy are needed. `bin/README.md` has the
+naming rules and why each glob requires exactly one match.
 
 Install the collection dependencies next. `cee_configure` uses
 `ansible.posix.firewalld` on Linux and `community.windows.win_firewall_rule`
@@ -222,8 +236,10 @@ guessed:
   string. No uninstall automation exists in this repo.
 - **`Security\Http\ServerEnabled` ships `0` in 9.2.0.0**, exactly like
   the Linux XML default, and `cee_configure`'s Windows branch writes it
-  to `1`. (9.3.0.0 ships it as `1`; this repo vendors and deploys
-  9.2.0.0 only, so do not restore any unscoped "9.x" wording.) The
+  to `1`. (9.3.0.0 ships it as `1`; `bin/` vendors 9.2.0.0 only, but a
+  Windows host that already carries another release can target it with
+  the `cee_windows_version` / `cee_windows_product_id` pair, so do not
+  restore any unscoped "9.x" wording.) The
   listener binds `::` (the IPv6 wildcard), not an IPv4 address —
   probing `127.0.0.1` still works under dual-stack, but the bind itself
   is not IPv4.

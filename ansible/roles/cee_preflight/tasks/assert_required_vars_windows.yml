@@ -1,0 +1,134 @@
+---
+# Windows-only variable gate, the counterpart of
+# assert_required_vars_linux.yml. Isolated from preflight_windows.yml so
+# tests/ can include it with a deliberately incomplete variable set, like
+# every other gate in this repo.
+#
+# These two live in group_vars rather than in a cee_install defaults/
+# file. That was tried and rejected: ansible-lint's production profile
+# requires role defaults to carry the role name as a prefix
+# (var-naming[no-role-prefix]), which would have meant either
+# cee_install_windows_product_id — inconsistent with every other cee_*
+# variable in this repo, all of which come from group_vars — or a second
+# `noqa`, in a repo that documents having exactly one and treats adding
+# another as needing the same scrutiny.
+#
+# Requiring them outright, rather than defaulting to the vendored
+# 9.2.0.0, is the deliberate choice. A default here would let a host that
+# forgot the pair silently install a different release than the operator
+# believed, which is the same class of silent success the rest of this
+# role exists to prevent.
+
+- name: Windows hosts must define the CEE release they target
+  # Not two separate asserts, and not a loop: these two are a pair, and
+  # naming them together is what makes a half-filled file obvious. A
+  # looped assert would bury the fail_msg under "One or more items
+  # failed" anyway — see the note in CLAUDE.md.
+  #
+  # `is defined` alone is not enough here, and the empty ProductCode is the
+  # reason. cee_install's Windows.yml asks whether the release is already
+  # present with
+  #
+  #   win_reg_stat: path=HKLM:\...\Uninstall\{{ cee_windows_product_id }}
+  #
+  # and an empty value renders that as the bare `...\Uninstall` parent key,
+  # which exists on every Windows host alive. The play then reports "CEE is
+  # already registered", skips staging and installation entirely, and moves
+  # on — the exact silent success this role exists to prevent. A blank from
+  # a vault lookup that returned nothing, or a truncated copy-paste, looks
+  # identical to a correct run.
+  #
+  # `default('', true)` maps both undefined and empty to '', and `trim`
+  # catches a value that is only whitespace.
+  ansible.builtin.assert:
+    that:
+      - cee_windows_version is defined
+      - cee_windows_product_id is defined
+      - (cee_windows_version | default('', true) | string | trim | length) > 0
+      - (cee_windows_product_id | default('', true) | string | trim | length) > 0
+    fail_msg: >-
+      cee_windows_version and/or cee_windows_product_id is undefined or
+      blank — version is
+      '{{ cee_windows_version | default('<undefined>') }}', ProductCode is
+      '{{ cee_windows_product_id | default('<undefined>') }}'.
+      Copy ansible/group_vars/cee_windows.yml.example to
+      ansible/group_vars/cee_windows.yml and fill both in. They are a
+      pair: win_package decides whether CEE is already installed purely
+      from the ProductCode, and the GUID changes with every CEE release,
+      so the version alone cannot drive the install and the GUID alone
+      cannot be checked against what the host reports. Known pairs are
+      listed in the example file. A blank ProductCode is worse than a
+      missing one: it addresses the Uninstall parent key, which always
+      exists, so the play skips the install and reports success.
+
+# Optional, unlike the pair above — but a half-filled pair is not, in
+# either direction. An account with no password reaches win_service as an
+# undefined-variable error deep in cee_configure, after the registry has
+# already been rewritten; naming it here means it fails before anything is
+# touched.
+- name: A CEE service account must come with a password
+  ansible.builtin.assert:
+    that:
+      - cee_windows_service_password is defined
+    fail_msg: >-
+      cee_windows_service_account is set to
+      '{{ cee_windows_service_account | default("") }}' but
+      cee_windows_service_password is undefined. The two go together: the
+      vendor's install-completion step runs the EMC CAVA service as a
+      domain account, and a service account cannot be set without its
+      password. Put the password in a vault — group_vars/cee_windows.yml
+      is gitignored, which is not the same as encrypted. Leave both unset
+      to keep the service on whatever account it already has.
+  when: cee_windows_service_account is defined
+
+# The mirror case, and the quieter of the two. cee_configure gates both of
+# its service-account tasks on cee_windows_service_account alone, so a
+# password with no account is not an error anywhere downstream — the play
+# simply skips the logon-account change and reports success, leaving the
+# service on whatever account it already had. An operator who vaulted a
+# password and mistyped the account variable name gets a green run and no
+# hint that the step they were configuring never happened.
+- name: A CEE service password must come with an account
+  ansible.builtin.assert:
+    that:
+      - cee_windows_service_account is defined
+    fail_msg: >-
+      cee_windows_service_password is defined but
+      cee_windows_service_account is not. cee_configure decides whether to
+      set the EMC CAVA service logon account from the account variable
+      alone, so this combination silently does nothing: the service keeps
+      the account it already had and the play still reports success. Set
+      both, or neither.
+  when: cee_windows_service_password is defined
+
+# Blank is its own case, and it is not the same as unset. cee_configure
+# gates on `cee_windows_service_account is defined`, which a blank value
+# satisfies — so an account variable that a vault lookup resolved to
+# nothing does not fall back to "leave the service alone". It reaches
+# win_service as an empty logon account, after the registry has been
+# rewritten. Two asserts rather than one so the failure names which half
+# is empty; the password's own value is never echoed.
+- name: A configured CEE service account must not be blank
+  ansible.builtin.assert:
+    that:
+      - (cee_windows_service_account | default('', true) | string | trim | length) > 0
+    fail_msg: >-
+      cee_windows_service_account is defined but empty. That is not the
+      same as leaving it unset: cee_configure decides whether to touch the
+      EMC CAVA service logon account from whether this variable is
+      *defined*, so a blank one still runs that step, with no account.
+      Unset both cee_windows_service_account and
+      cee_windows_service_password to leave the service on the account it
+      already has, or set both to real values.
+  when: cee_windows_service_account is defined
+
+- name: A configured CEE service password must not be blank
+  ansible.builtin.assert:
+    that:
+      - (cee_windows_service_password | default('', true) | string | trim | length) > 0
+    fail_msg: >-
+      cee_windows_service_password is defined but empty. A service account
+      cannot be set with an empty password, and a vault lookup that
+      resolved to nothing looks exactly like this. Put a real password in
+      the vault, or unset both service-account variables.
+  when: cee_windows_service_password is defined

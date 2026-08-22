@@ -20,3 +20,23 @@ format = "text"
 [metrics]
 enabled = true
 addr    = "0.0.0.0:9228"
+
+# CEPA registration. This is the identity CEE registers the consumer under, and
+# CEE only registers names present in `CGuidStore`, a table compiled into
+# libCEPPAPIWrapper.so keyed by (friendlyName, facility) → GUID. A self-generated
+# GUID can never work: the registration is refused, no partner exists, and CEE
+# answers every array heartbeat 0x16 CEPP_NOT_FOUND while every observable stays
+# green. See docs/cee-partner-allowlist.md.
+#
+# The triple below is verified end to end (2026-08-22, PowerStore → CEE 9.3.0.0 →
+# cee-exporter): `PeerSoftwareCollector` is Peer Software's registered identity
+# for the Audit facility, and the GUID is that name's pairing for it. The same
+# name must appear as cee_endpoints[0].name in ansible/group_vars/all.yml, which
+# is what cee_configure writes into CEE's EndPoint value.
+#
+# event_filter is CEE's own SplunkHEC template value — all bits set, three 32-bit
+# words (pre, post-success, post-failure).
+[cepa]
+friendly_name = "PeerSoftwareCollector"
+guid          = "49f4da0f-055f-401c-9f83-a95ce61447f6"
+event_filter  = "0xFFFFFFFF0000000000000000"

@@ -49,9 +49,10 @@
     that:
       - cee_verify_listening is not failed
     fail_msg: >-
-      Nothing is listening on {{ cee_http_port }}. CEE 9.2.0.0 ships
-      Security\Http\ServerEnabled = 0 on Windows — confirmed against a
-      fresh install — so the first thing to check is that
+      Nothing is listening on {{ cee_http_port }}. The vendor default for
+      Security\Http\ServerEnabled on Windows is version-dependent —
+      measured as 0 in 9.2.0.0 and 1 in 9.3.0.0 — and cee_configure
+      writes 1 regardless, so the first thing to check is that
       HKLM:\SOFTWARE\EMC\CEE\Configuration\Security\Http\ServerEnabled is
       now 1 and that EMC Checker Server was restarted after it changed.
 
@@ -93,8 +94,8 @@
       written nothing since the process started. The service control
       manager can report a service as started while the process is mute.
       Check the Application event log on the host: a healthy start logs
-      event 104 "Starting the EMC CAVA service, version 9.2.0.0." and 134
-      "... was successfully started."
+      event 104 "Starting the EMC CAVA service, version <x.y.z.w>." and
+      134 "... was successfully started."
 
 - name: The event log must not report an unsupported platform
   ansible.builtin.assert:

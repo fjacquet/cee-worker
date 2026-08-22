@@ -1,0 +1,94 @@
+---
+# Staging and install for Windows, reached only when the release named by
+# cee_windows_version is not already registered on the host. Split out of
+# Windows.yml so the already-installed path reads as a single `when`,
+# matching the install_linux_locate.yml / install_linux_verify.yml split.
+
+# The glob is derived from cee_windows_version rather than being a bare
+# EMC_CEE_Pack_x64_*.exe wildcard, so bin/ may hold more than one release
+# at a time and each host selects its own. With the version pinned in, the
+# pattern carries no wildcard at all, so the assert below is an existence
+# check rather than the uniqueness check the old bare glob needed — it is
+# still written as `length == 1` so the fileglob result feeds the same
+# `[0]` lookup, but "found 2" is no longer a reachable outcome.
+- name: Locate the bundled CEE installer
+  ansible.builtin.set_fact:
+    cee_install_exe_candidates: >-
+      {{ query('ansible.builtin.fileglob',
+               playbook_dir + '/../bin/EMC_CEE_Pack_x64_'
+               + (cee_windows_version | replace('.', '_')) + '.exe') }}
+
+- name: The installer for the targeted CEE release must be present in bin/
+  ansible.builtin.assert:
+    that:
+      - cee_install_exe_candidates | length == 1
+    fail_msg: >-
+      CEE {{ cee_windows_version }} is not installed on this host, and
+      bin/EMC_CEE_Pack_x64_{{ cee_windows_version | replace('.', '_') }}.exe
+      is not on the controller
+      ({{ cee_install_exe_candidates | length }} matches). Either vendor
+      that installer, or point cee_windows_version and
+      cee_windows_product_id at a release the host already carries. Dell
+      ships these installers only through their authenticated portal, so
+      this is not something the playbook can fetch for you.
+
+- name: Record the installer path
+  ansible.builtin.set_fact:
+    cee_install_exe_local: "{{ cee_install_exe_candidates[0] }}"
+
+# The uniqueness assert above counts files; it does not look inside them.
+# A truncated download, or a ~130-byte Git LFS pointer left in bin/ by a
+# clone predating 2026-08-22 (when the Dell artefacts stopped being tracked),
+# satisfies it and is then handed to win_package, which fails confusingly on
+# something that is not an installer. Same guard, same reason, as the Linux
+# rpm path.
+- name: Confirm the installer on the controller is a real file, not a stub
+  ansible.builtin.stat:
+    path: "{{ cee_install_exe_local }}"
+  register: cee_install_exe_stat
+  delegate_to: localhost
+
+- name: The vendored installer must be the real thing, not a stub
+  ansible.builtin.assert:
+    that:
+      - cee_install_exe_stat.stat.size > 1048576
+    fail_msg: >-
+      {{ cee_install_exe_local }} is only
+      {{ cee_install_exe_stat.stat.size }} bytes — the real installer is
+      about 91 MB, so this is a truncated download or a leftover Git LFS
+      pointer. Dell's installers are not tracked in this repo and cannot be
+      recovered with `git lfs pull`: download
+      {{ cee_install_exe_local | basename }} from Dell's support portal into
+      bin/ on the controller. See bin/README.md.
+
+- name: Copy the CEE installer to the target
+  ansible.windows.win_copy:
+    src: "{{ cee_install_exe_local }}"
+    dest: C:\Windows\Temp\{{ cee_install_exe_local | basename }}
+
+- name: Install CEE
+  # product_id comes from cee_windows_product_id (see the role defaults),
+  # and every value it may take was read out of a real Uninstall key, not
+  # guessed: docs/superpowers/specs/2026-08-10-cee-windows-releve.md
+  #
+  # arguments is explicit because this is not a bare MSI: it is a Flexera
+  # InstallShield 27.0.122 "Setup Launcher Unicode" wrapper. `/s /v"/qn"`
+  # is the InstallScript-MSI silent form, and it was confirmed working —
+  # the /r response-file route was never needed.
+  #
+  # Note for any future uninstall automation: the registered
+  # UninstallString is `MsiExec.exe /I{GUID}`. That is /I — install and
+  # repair — not /X, and there is no QuietUninstallString. Reusing that
+  # string verbatim opens a maintenance UI. Build `msiexec /x <GUID> /qn`
+  # instead.
+  ansible.windows.win_package:
+    path: C:\Windows\Temp\{{ cee_install_exe_local | basename }}
+    product_id: "{{ cee_windows_product_id }}"
+    arguments: /s /v"/qn"
+    state: present
+  notify: Restart emc_cee
+
+- name: Remove the staged installer
+  ansible.windows.win_file:
+    path: C:\Windows\Temp\{{ cee_install_exe_local | basename }}
+    state: absent

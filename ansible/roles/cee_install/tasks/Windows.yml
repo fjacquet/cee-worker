@@ -1,84 +1,42 @@
 ---
 # Windows branch. Nothing is shared with the Linux ones: a different
 # artefact, a different package manager, a different layout.
+#
+# Two entry states are supported, because both occur in practice:
+#
+#   the host does not carry cee_windows_version  -> stage bin/ and install
+#   the host already has it registered           -> skip straight to the checks
+#
+# The second is not a convenience. Windows CEE hosts are routinely handed
+# over with CEE already on them — both test VMs this repo has seen
+# arrived that way, carrying 9.3.0.0 — and Dell publishes the installers
+# only through their authenticated portal, so the controller may
+# legitimately hold no artefact for the release that is already on the
+# target. Refusing there would mean the repo could configure only the
+# hosts it had installed itself, which is the smaller half of the job.
+#
+# What is NOT skipped in that path is verification: the layout check and
+# the version assert below run either way, so "already installed" still
+# has to prove it means the release this play targets.
 
-- name: Locate the bundled CEE installer
-  ansible.builtin.set_fact:
-    cee_install_exe_candidates: >-
-      {{ query('ansible.builtin.fileglob',
-               playbook_dir + '/../bin/EMC_CEE_Pack_x64_*.exe') }}
+- name: Check whether the targeted CEE release is already registered
+  ansible.windows.win_reg_stat:
+    path: HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{{ cee_windows_product_id }}
+  register: cee_install_product_key
 
-- name: Exactly one CEE installer must be present in bin/
-  ansible.builtin.assert:
-    that:
-      - cee_install_exe_candidates | length == 1
-    fail_msg: >-
-      Expected exactly one EMC_CEE_Pack_x64_*.exe in bin/, found
-      {{ cee_install_exe_candidates | length }}. Remove the old installer
-      before adding a new one — the product_id below is version-specific
-      and would no longer match.
+- name: Report that CEE is already present and bin/ is not needed
+  ansible.builtin.debug:
+    msg: >-
+      CEE {{ cee_windows_version }} is already registered under
+      {{ cee_windows_product_id }}, so nothing was staged or installed and
+      bin/ needs no installer for this host. The layout and version checks
+      still run below, and cee_configure will apply this repo's
+      configuration to the existing install.
+  when: cee_install_product_key.exists
 
-- name: Record the installer path
-  ansible.builtin.set_fact:
-    cee_install_exe_local: "{{ cee_install_exe_candidates[0] }}"
-
-# bin/*.exe is Git LFS-tracked (.gitattributes). Without `git lfs install`
-# + `git lfs pull` on the controller this "installer" is a ~130-byte text
-# pointer, and the uniqueness assert above passes either way — it counts
-# files, it does not look inside them. Same guard, same reason, as the
-# Linux rpm path.
-- name: Confirm the installer on the controller is a real file, not an LFS pointer
-  ansible.builtin.stat:
-    path: "{{ cee_install_exe_local }}"
-  register: cee_install_exe_stat
-  delegate_to: localhost
-
-- name: The vendored installer must not be an unpulled Git LFS pointer
-  ansible.builtin.assert:
-    that:
-      - cee_install_exe_stat.stat.size > 1048576
-    fail_msg: >-
-      {{ cee_install_exe_local }} is only
-      {{ cee_install_exe_stat.stat.size }} bytes — that is a Git LFS
-      pointer, not the real installer (the real one is about 91 MB). Run
-      `git lfs install && git lfs pull` on the controller, then re-run the
-      playbook.
-
-- name: Copy the CEE installer to the target
-  ansible.windows.win_copy:
-    src: "{{ cee_install_exe_local }}"
-    dest: C:\Windows\Temp\{{ cee_install_exe_local | basename }}
-
-- name: Install CEE
-  # product_id was read out of the Uninstall key after a real 9.2.0.0
-  # install on a test host, not guessed:
-  #   docs/superpowers/specs/2026-08-10-cee-windows-releve.md
-  # It is version-specific. 9.3.0.0 carries a different GUID, so bumping
-  # the vendored installer without updating this line would make
-  # win_package believe CEE is absent when it is present, or present when
-  # it is not.
-  #
-  # arguments is explicit because this is not a bare MSI: it is a Flexera
-  # InstallShield 27.0.122 "Setup Launcher Unicode" wrapper. `/s /v"/qn"`
-  # is the InstallScript-MSI silent form, and it was confirmed working —
-  # the /r response-file route was never needed.
-  #
-  # Note for any future uninstall automation: the registered
-  # UninstallString is `MsiExec.exe /I{GUID}`. That is /I — install and
-  # repair — not /X, and there is no QuietUninstallString. Reusing that
-  # string verbatim opens a maintenance UI. Build `msiexec /x <GUID> /qn`
-  # instead.
-  ansible.windows.win_package:
-    path: C:\Windows\Temp\{{ cee_install_exe_local | basename }}
-    product_id: '{81F4A925-A885-4F58-8907-641BC7E82B99}'
-    arguments: /s /v"/qn"
-    state: present
-  notify: Restart emc_cee
-
-- name: Remove the staged installer
-  ansible.windows.win_file:
-    path: C:\Windows\Temp\{{ cee_install_exe_local | basename }}
-    state: absent
+- name: Stage and install CEE from the vendored installer
+  ansible.builtin.include_tasks: install_windows_package.yml
+  when: not cee_install_product_key.exists
 
 - name: Verify the CEE layout
   ansible.windows.win_stat:
@@ -100,3 +58,30 @@
   loop: "{{ cee_install_layout.results }}"
   loop_control:
     label: "{{ item.item }}"
+
+# The ProductCode check above answers "is this GUID registered", which is
+# all win_package can ask. It cannot catch a cee_windows_product_id that
+# was pointed at the wrong release: an operator who bumps the version but
+# leaves the old GUID gets a play that reports success against whatever
+# CEE happens to be installed. CEE writes its own version into the
+# registry, so read it back and judge the result on the version rather
+# than on the GUID that was used to look for it.
+- name: Read the installed CEE version from the registry
+  ansible.windows.win_reg_stat:
+    path: HKLM:\SOFTWARE\EMC\CEE
+    name: Version
+  register: cee_install_version_value
+
+- name: The installed CEE version must be the one this play targets
+  ansible.builtin.assert:
+    that:
+      - cee_install_version_value.exists
+      - cee_install_version_value.value == cee_windows_version
+    fail_msg: >-
+      HKLM:\SOFTWARE\EMC\CEE\Version reads
+      '{{ cee_install_version_value.value | default("<no value>") }}' but
+      this play targets CEE {{ cee_windows_version }} via ProductCode
+      {{ cee_windows_product_id }}. The version and the GUID disagree, so
+      one of them is wrong — they are set as a pair in
+      group_vars/cee_windows.yml and must be changed together. Known
+      pairs are listed in group_vars/cee_windows.yml.example.

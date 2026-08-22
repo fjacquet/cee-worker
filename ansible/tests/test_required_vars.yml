@@ -215,3 +215,246 @@
   tasks:
     - name: Assert the Linux-only variables
       ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_linux.yml
+
+# The Windows counterpart. cee_windows_version and cee_windows_product_id
+# have no default anywhere on purpose: win_package treats an unknown
+# ProductCode as "not installed", so a defaulted pair would let a host
+# that never set them install — or claim to have installed — a different
+# release than the operator intended.
+#
+# Both halves are covered separately, because the interesting failure is
+# the half-filled file: an operator who bumps the version and forgets the
+# GUID gets a play that would otherwise search for the old release and
+# report success against it.
+- name: A missing cee_windows_product_id is rejected on Windows
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_windows_version: 9.3.0.0
+  tasks:
+    - name: Expect the Windows-only variable gate to fail
+      block:
+        - name: Assert the Windows-only variables
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_windows.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation did not reject the missing cee_windows_product_id."
+      rescue:
+        - name: Confirm it failed for the Windows version-pair reason
+          ansible.builtin.assert:
+            that:
+              - "'cee_windows.yml.example' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the Windows version-pair message."
+
+- name: A missing cee_windows_version is rejected on Windows
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_windows_product_id: '{149370D4-461B-43D1-9D8E-71FCBA58A618}'
+  tasks:
+    - name: Expect the Windows-only variable gate to fail
+      block:
+        - name: Assert the Windows-only variables
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_windows.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation did not reject the missing cee_windows_version."
+      rescue:
+        - name: Confirm it failed for the Windows version-pair reason
+          ansible.builtin.assert:
+            that:
+              - "'cee_windows.yml.example' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the Windows version-pair message."
+
+- name: A complete version pair passes the Windows gate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_windows_version: 9.3.0.0
+    cee_windows_product_id: '{149370D4-461B-43D1-9D8E-71FCBA58A618}'
+  tasks:
+    - name: Assert the Windows-only variables
+      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_windows.yml
+
+# The service account is optional, so the gate has to distinguish "absent"
+# from "half-filled". All three directions are covered: omitting it entirely
+# must pass (the common case — the service keeps whatever account it has),
+# naming an account without a password must fail before cee_configure
+# rewrites the registry, and a password without an account must fail too —
+# that half does not error anywhere downstream, it just silently skips the
+# step the operator was configuring.
+#
+# The "complete pair passes" case is already covered by the play above, which
+# defines the version pair and no service account at all.
+- name: A service account without a password is rejected on Windows
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_windows_version: 9.3.0.0
+    cee_windows_product_id: '{149370D4-461B-43D1-9D8E-71FCBA58A618}'
+    cee_windows_service_account: DIAB\svc-cepa
+  tasks:
+    - name: Expect the Windows-only variable gate to fail
+      block:
+        - name: Assert the Windows-only variables
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_windows.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation did not reject the missing cee_windows_service_password."
+      rescue:
+        - name: Confirm it failed for the service-password reason
+          ansible.builtin.assert:
+            that:
+              - "'vault' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the service-account password message."
+
+- name: A service password without an account is rejected on Windows
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_windows_version: 9.3.0.0
+    cee_windows_product_id: '{149370D4-461B-43D1-9D8E-71FCBA58A618}'
+    cee_windows_service_password: hunter2
+  tasks:
+    - name: Expect the Windows-only variable gate to fail
+      block:
+        - name: Assert the Windows-only variables
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_windows.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "Validation did not reject the missing cee_windows_service_account."
+      rescue:
+        - name: Confirm it failed for the orphaned-password reason
+          ansible.builtin.assert:
+            that:
+              - "'Set both, or neither' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the orphaned service-password message."
+
+# Blank is not the same as unset, and `is defined` cannot tell them apart.
+# The ProductCode case is the dangerous one: cee_install renders it into
+# `HKLM:\...\Uninstall\{{ cee_windows_product_id }}`, so an empty value
+# addresses the Uninstall parent key, which exists everywhere. win_reg_stat
+# reports exists=true, the play concludes CEE is already installed, skips
+# staging entirely and reports success against a host that may have no CEE
+# at all.
+- name: A blank cee_windows_product_id is rejected on Windows
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_windows_version: 9.3.0.0
+    cee_windows_product_id: ""
+  tasks:
+    - name: Expect the Windows-only variable gate to fail
+      block:
+        - name: Assert the Windows-only variables
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_windows.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "An empty ProductCode was taken for a real one."
+      rescue:
+        - name: Confirm it failed for the blank-pair reason
+          ansible.builtin.assert:
+            that:
+              - "'undefined or blank' in (ansible_failed_result.msg | default('') | string)"
+              - "'Uninstall parent key' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: >-
+              Failed, but without naming the blank value or what a blank
+              ProductCode actually does.
+
+- name: A whitespace-only cee_windows_version is rejected on Windows
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_windows_version: "   "
+    cee_windows_product_id: '{149370D4-461B-43D1-9D8E-71FCBA58A618}'
+  tasks:
+    - name: Expect the Windows-only variable gate to fail
+      block:
+        - name: Assert the Windows-only variables
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_windows.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "A version of nothing but spaces was accepted."
+      rescue:
+        - name: Confirm it failed for the blank-pair reason
+          ansible.builtin.assert:
+            that:
+              - "'undefined or blank' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the blank version-pair message."
+
+- name: A blank cee_windows_service_account is rejected on Windows
+  # Distinct from omitting it. cee_configure gates on `is defined`, so a
+  # blank account still runs the logon-account step — with no account.
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_windows_version: 9.3.0.0
+    cee_windows_product_id: '{149370D4-461B-43D1-9D8E-71FCBA58A618}'
+    cee_windows_service_account: ""
+    cee_windows_service_password: hunter2
+  tasks:
+    - name: Expect the Windows-only variable gate to fail
+      block:
+        - name: Assert the Windows-only variables
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_windows.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "An empty logon account was allowed through to win_service."
+      rescue:
+        - name: Confirm it failed for the blank-account reason
+          ansible.builtin.assert:
+            that:
+              - "'defined but empty' in (ansible_failed_result.msg | default('') | string)"
+              - "'cee_windows_service_account' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the blank service-account message."
+
+- name: A blank cee_windows_service_password is rejected on Windows
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_windows_version: 9.3.0.0
+    cee_windows_product_id: '{149370D4-461B-43D1-9D8E-71FCBA58A618}'
+    cee_windows_service_account: DIAB\svc-cepa
+    cee_windows_service_password: ""
+  tasks:
+    - name: Expect the Windows-only variable gate to fail
+      block:
+        - name: Assert the Windows-only variables
+          ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_windows.yml
+        - name: Should be unreachable
+          ansible.builtin.fail:
+            msg: "An empty service password was accepted as a real one."
+      rescue:
+        - name: Confirm it failed for the blank-password reason
+          ansible.builtin.assert:
+            that:
+              - "'defined but empty' in (ansible_failed_result.msg | default('') | string)"
+              - "'cee_windows_service_password' in (ansible_failed_result.msg | default('') | string)"
+            fail_msg: "Failed, but not with the blank service-password message."
+
+# The positive service-account path had no coverage at all: every existing
+# play either omits both variables or supplies exactly one. A regression
+# that rejected a correctly configured account — the vendor's documented
+# install-completion step, and what win25 actually runs — would have passed
+# the whole suite.
+- name: A complete service account and password pass the Windows gate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    cee_windows_version: 9.3.0.0
+    cee_windows_product_id: '{149370D4-461B-43D1-9D8E-71FCBA58A618}'
+    cee_windows_service_account: DIAB\svc-cepa
+    cee_windows_service_password: hunter2
+  tasks:
+    - name: Assert the Windows-only variables
+      ansible.builtin.include_tasks: ../roles/cee_preflight/tasks/assert_required_vars_windows.yml

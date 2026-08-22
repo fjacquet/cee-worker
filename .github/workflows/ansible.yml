@@ -22,7 +22,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-          lfs: true
+          # No lfs: true. Nothing is LFS-tracked any more — the Dell artefacts
+          # left the index on 2026-08-22 (bin/README.md) — and this job never
+          # needed them: every test under ansible/tests/ runs against localhost
+          # and installs nothing.
 
       - name: Set up Python
         uses: actions/setup-python@v5

@@ -14,6 +14,9 @@
 # branch asserts it in assert_required_vars_linux.yml; there is no
 # Windows counterpart because there is nothing to point at.
 
+- name: Assert the Windows-only variables are defined
+  ansible.builtin.include_tasks: assert_required_vars_windows.yml
+
 - name: Query the Windows time service
   ansible.windows.win_shell: w32tm /query /status
   register: cee_preflight_w32tm
