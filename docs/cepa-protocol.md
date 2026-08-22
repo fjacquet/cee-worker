@@ -104,10 +104,16 @@ is the number that matters, since it keys the partner allowlist.
 
 ## Leg 2 — the five gates
 
-Every one of these must pass. Failing gates 1–4 yields `0x16` on leg 1, which is
-why that status is so uninformative on its own. Gate 5 is different and worse:
-it passes every check on both legs, delivers events to the consumer, and still
-publishes nothing.
+Every one of these must pass, and each fails with its own status on leg 1:
+
+| Gate | Fails as |
+|---|---|
+| 1 endpoint, 2 identity, 4 encoding | `0x16` — no registered partner. Uninformative on its own, which is why these three are indistinguishable from the array side |
+| 3 liveness | `0x12 OFFLINE` — registration succeeded, the heartbeat reply did not |
+| 5 event acknowledgement | `0x1` with `auditStatus="0x1"`, while heartbeats keep returning `0x0` |
+
+Gate 5 is the dangerous one. It passes every check on both legs, delivers events
+to the consumer, and still publishes nothing.
 
 ### Gate 1 — the endpoint must be reachable and correctly formed
 

@@ -345,7 +345,7 @@ that read it could not pass on any real host.
 **Start here for anything CEPA-related.** These two supersede everything below
 wherever they disagree:
 
-- `docs/cepa-protocol.md` — **the protocol reference.** Both legs, the four
+- `docs/cepa-protocol.md` — **the protocol reference.** Both legs, the five
   gates a consumer must pass, the status-code table, the encoding rules, the
   diagnostic toolkit (`Debug=63`, `cepa_probe.sh`, `dbgcapture.ps1`) and a
   failure-signature → cause table. Written so you never have to read the
