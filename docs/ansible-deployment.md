@@ -75,11 +75,18 @@ reachable UBI 9 repositories for RHEL dependency resolution.
 
 ## Setup
 
-Pull the LFS-tracked vendor artefacts first, if not already present
-(see Prerequisites above for what breaks without this):
+Put the Dell artefacts in place first — they are not in the repo, so a fresh
+clone has an empty `bin/` and every platform branch fails at its glob until
+you do (see Prerequisites above). Download the CEE 9.2.0.0 media you need from
+Dell's support portal and copy it in under the exact filenames:
 
-    git lfs install
-    git lfs pull
+    cp emc_cee_RHEL-9.2.0.0.x86_64.rpm  bin/    # RHEL 9 targets
+    cp emc_cee_SLES-9.2.0.0.x86_64.rpm  bin/    # SLES 15 targets
+    cp EMC_CEE_Pack_x64_9_2_0_0.exe     bin/    # Windows Server targets
+    file bin/*                                  # each must report RPM v3.0 / PE, never "ASCII text"
+
+Only the platforms you actually deploy are needed. `bin/README.md` has the
+naming rules and why each glob requires exactly one match.
 
 Install the collection dependencies next. `cee_configure` uses
 `ansible.posix.firewalld` on Linux and `community.windows.win_firewall_rule`

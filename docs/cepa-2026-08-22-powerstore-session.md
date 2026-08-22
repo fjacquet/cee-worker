@@ -378,12 +378,33 @@ valid `RegisterResponse`, an empty body, and non-XML garbage. All three
 re-sent `<RegisterRequest />` every 10 s, identically, forever, and none ever
 sent `<HeartBeatRequest />`. The cadence says nothing about acceptance.
 
-**CEE has no vendor allowlist.** `libCEPPAPIWrapper.so` rejects partners with
-*"unknown or invalid GUID"* and *"GUID mismatch"*, which reads like a
-Dell-issued key per partner. It is not: the entire CEE package contains
-**exactly one** GUID literal, CEE's own SplunkHEC proxy. The ~40 vendor names
-are strings with no GUIDs attached. An OSS consumer is not locked out by
-identity.
+**~~CEE has no vendor allowlist.~~ WRONG — it has exactly that, and it was the
+blocker.** The claim below is preserved because the *way* it was wrong is the
+useful part.
+
+> `libCEPPAPIWrapper.so` rejects partners with *"unknown or invalid GUID"* and
+> *"GUID mismatch"*, which reads like a Dell-issued key per partner. It is not:
+> the entire CEE package contains **exactly one** GUID literal, CEE's own
+> SplunkHEC proxy. The ~40 vendor names are strings with no GUIDs attached. An
+> OSS consumer is not locked out by identity.
+
+The observation was accurate and the inference did not follow. There is exactly
+one GUID-shaped *string* in `libCEPPAPIWrapper.so` — but the partner GUIDs are
+not strings. `CGuidStore::Init()` makes 47 calls to
+`ValidateAndAdd(const wchar_t *name, FacilityID, _GUID)`, and each GUID is
+passed **by value as immediate operands pushed onto the stack**, so it exists in
+`.text` as instruction bytes and never as text. Searching the binary for
+`49f4da0f-055f-401c-9f83-a95ce61447f6` — the GUID that later made this
+deployment work — finds nothing in ASCII, UTF-16LE, UTF-32LE, or as raw
+`bytes_le`/`bytes_be`. "No GUID literals" and "no GUIDs" are not the same
+statement, and the names are not decorative: they key the table.
+
+An OSS consumer **is** locked out by identity, and must borrow one of the 47
+registered ones. See `cee-partner-allowlist.md` for the full table, how it was
+extracted, and the caveat about using another vendor's name. This is enforced in
+`cee_common/tasks/assert_partner_identity.yml`; an operator following the
+struck-through paragraph will configure an arbitrary identity and recreate
+`0x16 CEPP_NOT_FOUND` with every observable green.
 
 **A replayed heartbeat cannot substitute for array traffic.** Replaying NAS01's
 captured heartbeat at CEE is answered `0x10` — `VC_ERROR_BAD_REQUEST`,

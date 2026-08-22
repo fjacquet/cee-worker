@@ -28,12 +28,24 @@ jobs:
       # restore it, supply the artefact before this step — a self-hosted
       # runner with bin/ populated, or a download step against wherever your
       # organisation keeps its licensed Dell media.
+      # Enforces the same contract as install_linux_locate.yml: exactly one
+      # match, and a real rpm. `ls` alone would accept two matches (the
+      # Dockerfile then does `rpm -i /tmp/*.rpm` and installs both) and would
+      # accept a ~130-byte Git LFS pointer left over from an older clone,
+      # which fails much later and far less legibly.
       - name: Require the vendored CEE rpm
         run: |
-          if ! ls bin/emc_cee_RHEL-*.x86_64.rpm >/dev/null 2>&1; then
-            echo "::error::bin/emc_cee_RHEL-*.x86_64.rpm is absent."
+          shopt -s nullglob
+          rpms=(bin/emc_cee_RHEL-*.x86_64.rpm)
+          if [ "${#rpms[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one bin/emc_cee_RHEL-*.x86_64.rpm, found ${#rpms[@]}."
             echo "::error::Dell artefacts are not tracked in this repo; see bin/README.md."
             echo "::error::Supply the rpm before this step, or do not run this workflow."
+            exit 1
+          fi
+          if [ ! -f "${rpms[0]}" ] || ! file -b "${rpms[0]}" | grep -q '^RPM v'; then
+            echo "::error::${rpms[0]} is not an rpm — $(file -b "${rpms[0]}")."
+            echo "::error::A Git LFS pointer from an older clone reports 'ASCII text'."
             exit 1
           fi
 

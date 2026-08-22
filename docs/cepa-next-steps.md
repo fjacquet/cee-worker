@@ -35,10 +35,12 @@ The two names must match, and the GUID must be that name's pairing for the
 **Audit** facility. `PeerSoftwareCollector` is Peer Software's registered
 identity — see the caveat in `cee-partner-allowlist.md` before shipping this.
 
-**Not yet in Ansible.** `ansible/group_vars/all.yml` is gitignored, so the
-endpoint name above was set by hand via `win_regedit`. Anyone re-running
-`site.yml` with the old `cee_endpoints[0].name: ceeexporter` will break it
-again. Fixing that is open item 3.
+**In Ansible, and now guarded.** The endpoint name above was originally set by
+hand via `win_regedit`, and `ansible/group_vars/all.yml` is gitignored, so
+re-running `site.yml` with the old `cee_endpoints[0].name: ceeexporter` used to
+break it again silently. `cee_common/tasks/assert_partner_identity.yml` now
+rejects any name outside CEE's Audit allowlist before the play touches a host,
+so that re-run fails loudly instead. See open item 3.
 
 ## Environment
 
@@ -84,10 +86,14 @@ Verified locally before handover: `go build`, `go vet`, `go test -race`
 `docs-lint` guards, `ansible-playbook --syntax-check site.yml`, and
 `ansible/tests/run.sh` (`ok=13 failed=0`).
 
-**Not run here:** `yamllint` and `ansible-lint` are not installed on this
-machine. Nothing in these commits touches `ansible/` or `.github/` YAML, so
-their scope is untouched — but they are unrun, so run them on the dev station
-before pushing.
+*Superseded 2026-08-22.* That paragraph described the doc-only commits above,
+and said `yamllint` / `ansible-lint` were unavailable on the machine of the day.
+Both statements are now stale: later work on this branch adds a `cee_common`
+gate, a test playbook and workflow changes, so `ansible/` and `.github/` YAML
+**are** touched — and both linters were run on the dev station, clean
+(`ansible-lint` production profile, `yamllint` with only the pre-existing
+`document-start` warning in `publish.yml`), alongside `ansible/tests/run.sh`
+and `ansible-playbook --syntax-check site.yml`.
 
 ## Open items, in priority order
 

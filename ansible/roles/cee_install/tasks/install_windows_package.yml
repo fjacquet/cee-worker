@@ -36,27 +36,30 @@
   ansible.builtin.set_fact:
     cee_install_exe_local: "{{ cee_install_exe_candidates[0] }}"
 
-# bin/*.exe is Git LFS-tracked (.gitattributes). Without `git lfs install`
-# + `git lfs pull` on the controller this "installer" is a ~130-byte text
-# pointer, and the uniqueness assert above passes either way — it counts
-# files, it does not look inside them. Same guard, same reason, as the
-# Linux rpm path.
-- name: Confirm the installer on the controller is a real file, not an LFS pointer
+# The uniqueness assert above counts files; it does not look inside them.
+# A truncated download, or a ~130-byte Git LFS pointer left in bin/ by a
+# clone predating 2026-08-22 (when the Dell artefacts stopped being tracked),
+# satisfies it and is then handed to win_package, which fails confusingly on
+# something that is not an installer. Same guard, same reason, as the Linux
+# rpm path.
+- name: Confirm the installer on the controller is a real file, not a stub
   ansible.builtin.stat:
     path: "{{ cee_install_exe_local }}"
   register: cee_install_exe_stat
   delegate_to: localhost
 
-- name: The vendored installer must not be an unpulled Git LFS pointer
+- name: The vendored installer must be the real thing, not a stub
   ansible.builtin.assert:
     that:
       - cee_install_exe_stat.stat.size > 1048576
     fail_msg: >-
       {{ cee_install_exe_local }} is only
-      {{ cee_install_exe_stat.stat.size }} bytes — that is a Git LFS
-      pointer, not the real installer (the real one is about 91 MB). Run
-      `git lfs install && git lfs pull` on the controller, then re-run the
-      playbook.
+      {{ cee_install_exe_stat.stat.size }} bytes — the real installer is
+      about 91 MB, so this is a truncated download or a leftover Git LFS
+      pointer. Dell's installers are not tracked in this repo and cannot be
+      recovered with `git lfs pull`: download
+      {{ cee_install_exe_local | basename }} from Dell's support portal into
+      bin/ on the controller. See bin/README.md.
 
 - name: Copy the CEE installer to the target
   ansible.windows.win_copy:
