@@ -14,6 +14,17 @@
 # release name would silently fail to resolve. Override with
 # CEE_EXPORTER_TAG=<tag> to test another build.
 #
+# NO PUBLISHED TAG SATISFIES GATE 5. cee-exporter answers <CheckEventRequest>
+# with a bare HTTP 200 up to and including v5.5.0, which CEE reads as a failed
+# delivery: the array retries one event forever and nothing behind it is ever
+# sent, with every observable green. See gate 5 in docs/cepa-protocol.md.
+#
+# So this stack reproduces that failure against a real array. It is still fine
+# for exercising the container, the metrics and the dashboard — the consumer
+# receives and writes what it is given — but do not use it to validate an
+# end-to-end event path until a release carries the fix, and then pin that
+# release here.
+#
 # Do not pin below 5.1.0 while [output] type = "evtx". Every .evtx written
 # by a non-Windows build before 5.1.0 is unreadable by Windows —
 # Get-WinEvent reports "The event log file is corrupted" — and the files

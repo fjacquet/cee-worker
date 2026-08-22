@@ -64,7 +64,7 @@ The reply carries the status the array acts on:
 | status | meaning | what it tells you |
 |---|---|---|
 | `0x0` | NORMAL | working — events will flow |
-| `0x1` | `VC_ERROR_SETUP` | CEE has the facility disabled, or the source is not valid/online |
+| `0x1` | `VC_ERROR_SETUP` | On heartbeats: CEE has the facility disabled, or the source is not valid/online. **On event replies (`action="11"`), with heartbeats still `0x0`: gate 5** — the consumer answered the batch with a bare 200 |
 | `0x10` | `VC_ERROR_BAD_REQUEST` | CEE could not build an event context; a *replayed* request lands here |
 | `0x12` | OFFLINE | a partner is registered but not answering heartbeats |
 | `0x16` | `VC_ERROR_CEPP_NOT_FOUND` | **no registered partner** — almost always leg 2 |
@@ -102,10 +102,18 @@ The same binary also settles the facility numbering, from
 5 Backup, 6 CARA, 11 VCAPS, 12 VCAPS+** (7–10 are `Unknown`). Audit is 2 — which
 is the number that matters, since it keys the partner allowlist.
 
-## Leg 2 — the four gates
+## Leg 2 — the five gates
 
-Every one of these must pass. Failing any of them yields `0x16` on leg 1, which
-is why that status is so uninformative on its own.
+Every one of these must pass, and each fails with its own status on leg 1:
+
+| Gate | Fails as |
+|---|---|
+| 1 endpoint, 2 identity, 4 encoding | `0x16` — no registered partner. Uninformative on its own, which is why these three are indistinguishable from the array side |
+| 3 liveness | `0x12 OFFLINE` — registration succeeded, the heartbeat reply did not |
+| 5 event acknowledgement | `0x1` with `auditStatus="0x1"`, while heartbeats keep returning `0x0` |
+
+Gate 5 is the dangerous one. It passes every check on both legs, delivers events
+to the consumer, and still publishes nothing.
 
 ### Gate 1 — the endpoint must be reachable and correctly formed
 
@@ -161,7 +169,17 @@ string order): `0 ONLINE, 1 OFFLINE, 2 UNREGISTER, 3 REREGISTER, 4 UNKNOWN`.
 
 Miss this and registration succeeds but the array gets `0x12 OFFLINE`.
 
-*The separator between the two fields is not established* — `&` works.
+Use `&`. It is measured to work — leg-1 heartbeats return `status="0x0"` — and
+`\n` in its place was measured to give `0x12 OFFLINE` with the array ceasing to
+publish (2026-08-22, live array).
+
+**Why `\n` fails is not established, and the mechanism described above does not
+explain it.** A substring scan for `hbStatus=` and `ntStatus=` is
+separator-agnostic: `hbStatus=0\nntStatus=0` contains both. So either the parse
+also reads a value up to some specific delimiter — in which case "scans for" is
+too loose a description — or the `\n` trial failed for an unrelated reason not
+isolated at the time. Only `&` has been shown to work; treat the rest as
+unknown, and do not "tidy" it.
 
 ### Gate 4 — encoding
 
@@ -172,6 +190,57 @@ request's encoding. Answering UTF-16 to a UTF-8 request gives
 
 OneFS sends UTF-8 and must be answered in UTF-8; PowerStore's own leg-1 traffic
 is UTF-8 despite earlier notes to the contrary.
+
+### Gate 5 — acknowledge the event batch with a document
+
+**A bare HTTP 200 is not an acknowledgement.** Answer `<CheckEventRequest>`
+with a body:
+
+```xml
+<CheckEventResponse status="0x0"/>
+```
+
+Miss this and the failure is total, silent, and looks like something else
+entirely. CEE reads the empty body as a failed delivery and reports it upstream
+as `CheckFileResponse status="0x1"` carrying `<EventResponse auditStatus="0x1"/>`.
+The array counts the batch missed and retries **the same event**, so its queue
+head never clears and nothing behind it is ever sent. Measured on this estate:
+one event from 2026-08-14 redelivered on every heartbeat for eight days, and no
+other event ever.
+
+Nothing in the consumer looks wrong while this happens. Registration succeeds,
+`<HeartBeatRequest />` is answered and returns `0x0`, events arrive and are
+written, and consumer-side counters climb. The only signal is on the array: a
+Major alert, `0x01301b03 all_servers_unreachable`, "all the publishing pools of
+the NAS server are unavailable" — which reads as a network fault, and is not
+one. The NAS was TCP-connected to CEE on 12228 throughout.
+
+Both sides of the comparison, on the wire, 2026-08-22:
+
+| Consumer reply to `<CheckEventRequest>` | Leg 1 | Result |
+|---|---|---|
+| empty body | `status="0x1"`, `auditStatus="0x1"` | `action="11"` retried 6× in 40 s; one distinct path ever seen |
+| `<CheckEventResponse status="0x0"/>` | `status="0x0"` | no retries; backlog flushed — 1780 events, 14 event types, 30 s |
+
+**This document cannot be found in the binaries, and looking for it will
+actively mislead you.** There is no `CheckEventResponse` literal in ASCII or
+UTF-16 in `CEPPAPIWrapper.dll`, `CEPPFilter.dll`, `EvtCxt.dll`, `Convert.dll` or
+`CAVA.exe`. That absence was read once as proof the empty 200 was the whole
+contract — it is not proof of anything. CEE matches on the parsed document, not
+on a stored template. Only the wire settles this.
+
+**Mirror the request's encoding, as gate 4 requires.** The literal above is
+written UTF-8 for legibility; a UTF-16LE `<CheckEventRequest>` must be answered
+in UTF-16LE. Gate 4's worked example is about `<RegisterRequest />` and its
+failure mode (`Substring guid not found`) is registration-only, so nothing warns
+you here — an encoding mismatch on an event reply just lands you back in the
+silent failure above. The reference implementation transcodes on the shared
+reply path (`respond()` in `pkg/server/server.go`, `if parser.IsUTF16(reqBody)`)
+and sets `Content-Type: text/xml`.
+
+Note the asymmetry with gate 3: the heartbeat reply is a urlencoded form
+(`hbStatus=0&ntStatus=0`) and the event reply is XML. They are not the same
+shape and there is no reason to expect them to be.
 
 ## Events
 
@@ -259,6 +328,31 @@ On Windows only the Monitor (`[EMC CEEM]`) was observed writing there;
 `CAVA.exe` stayed silent even at `Debug=3`. Getting the CEPA trace on Windows
 may need whatever Dell KB 000022982 describes. **Debug the protocol on Linux.**
 
+Re-measured at the maximum on 2026-08-22, CEE **9.3.0.0**, Windows Server 2025
+(win25.diab.local — the same host the 9.3 bring-up used, and the host whose
+`ceeVersion="9.3.0.0"` appears in every capture in this document),
+because "the level was too low" is the obvious rebuttal and it is wrong:
+
+- `Debug=63` and `Verbose=63` set on both `HKLM:\SOFTWARE\EMC\CEE\Configuration`
+  and `…\Monitor\Configuration` — the only two places either value exists on
+  the host — and both services restarted afterwards.
+- 150 s of `DBWIN_BUFFER` captured across several heartbeats and event
+  deliveries: 14 lines, of which the only CEE ones were two
+  `[EMC CEEM]: CEvtLogStore: EntryWritten` from the Monitor. Nothing from CAVA.
+- No file appeared either — nothing under `C:\Program Files\EMC`,
+  `C:\ProgramData` or `C:\Windows\Temp` was written in the window.
+- `CAVA.exe` was the right process and was running the new setting: pid 8872
+  owned the listener on 12228 *and* every outbound connection to the consumer,
+  with `CEPPAPIWrapper.dll`, `CEPPFilter.dll`, `EvtCxt.dll` and `Convert.dll`
+  loaded, started after the registry change.
+
+So the trace table above — the one measured by replaying a heartbeat at each
+level — is a **Linux** measurement, and does not transfer. On 9.3.0.0 Windows
+there is no level at which CAVA explains itself. This refutes the claim on its
+own terms: `cee-9-3-windows-bring-up.md` said "the level was too low" about
+9.3.0.0, and this is 9.3.0.0 at the maximum level. The instruction stands
+unqualified: debug the protocol on Linux.
+
 ### `GET /vee` — CEE's own status document
 
 ```http
@@ -299,6 +393,9 @@ Read cycle is stop → `etl2pcap` → restart.
 | `0x16` with a *dead* endpoint too | Expected; a dead endpoint and a rejected registration are indistinguishable. **Not** evidence the consumer leg is innocent |
 | `0x12` | Registered but not answering `<HeartBeatRequest />` — gate 3 |
 | `0x1` on heartbeats | Facility disabled, or source not valid/online |
+| `0x1` + `auditStatus="0x1"` on **events**, heartbeats still `0x0` | Consumer answered the batch with a bare 200 — gate 5. The array retries one event forever and never advances |
+| Array alert `0x01301b03 all_servers_unreachable`, but the NAS is TCP-connected to CEE | Gate 5. Not a network fault, despite the wording and the repair advice |
+| Exactly one event path, redelivered at the heartbeat interval, forever | Gate 5. The array's queue head cannot clear |
 | `0x10` | You are replaying a captured request; it never reaches the CEPP lookup |
 | `Substring guid not found` | Encoding mismatch — gate 4 |
 | `server [NAS01] event not allowed` | AccessList holds addresses; it matches **FQDNs** |
@@ -308,6 +405,11 @@ Read cycle is stop → `etl2pcap` → restart.
 
 ## Things that are true but easy to get wrong
 
+- **Missed-event counters climbing does not always mean CEE is refusing.** Under
+  gate 5 CEE refuses nothing — it registers, answers heartbeats `0x0` and takes
+  every batch — and the array still counts the batch missed. Read a climbing
+  counter as "the array is generating events that are not landing", and check
+  gate 5 before concluding the refusal is on leg 1.
 - **`postSuccessEventsMissed` climbing means the array is healthy**, generating
   events, and being refused. It is a *good* sign when you are debugging CEE.
 - **`Get-NetTCPConnection` cannot see the array's sessions.** They are

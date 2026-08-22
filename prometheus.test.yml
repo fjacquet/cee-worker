@@ -1,8 +1,23 @@
 global:
+  # Left at 30s. Raising it globally would triple the scrapes of
+  # pstore_exporter, whose own collection.interval is 30s — three identical
+  # samples and three HTTP requests per collection cycle, for no new
+  # information.
   scrape_interval: 30s
 
 scrape_configs:
   - job_name: cee-exporter
+    # 10s, per-job: CEE's HeartBeatIntervalSecs defaults to 10, and
+    # cee_cepa_last_request_unix_seconds cannot be fresher than the last
+    # scrape. At 30s the "Publisher silence" panel read 15-25s for publishers
+    # that were all heartbeating perfectly — scrape staleness reported as a
+    # fault. A scrape interval longer than the signal cannot measure it.
+    #
+    # scrape_timeout is set explicitly because Prometheus otherwise resolves it
+    # to min(global default 10s, interval) = 10s, leaving no gap before the next
+    # scrape and making `up` flap on any slow response.
+    scrape_interval: 10s
+    scrape_timeout: 5s
     metrics_path: /metrics
     static_configs:
       - targets: ["cee-exporter:9228"]

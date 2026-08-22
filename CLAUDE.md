@@ -239,6 +239,22 @@ that read it could not pass on any real host.
   (the 27 distinct Audit identities) before the playbook touches a host; it runs
   last in `cee_common` because checking only the Audit half is correct only once
   `assert_facilities` has established Audit is the enabled sub-facility.
+- **A bare HTTP 200 does not acknowledge an event batch.** `<CheckEventRequest>`
+  must be answered with `<CheckEventResponse status="0x0"/>`. CEE reads an empty
+  body as a failed delivery, tells the array `auditStatus="0x1"`, and the array
+  retries **the same event** forever — its queue head never clears and nothing
+  behind it is ever sent. Measured here as one event from 2026-08-14 redelivered
+  every heartbeat for eight days, with every consumer-side observable green:
+  registration fine, heartbeats `0x0`, events arriving, counters climbing. The
+  only signal was an array alert, `0x01301b03 all_servers_unreachable`, which
+  reads as a network fault and is not one. Fixing it flushed 1780 events across
+  14 event types in 30 seconds. **This is gate 5 in `docs/cepa-protocol.md` and
+  the single most consequential rule in the protocol.** Do not look for a
+  `CheckEventResponse` literal in CEE's binaries to confirm it — it is absent, in
+  both encodings, from all five Windows DLLs examined (`CEPPAPIWrapper.dll`,
+  `CEPPFilter.dll`, `EvtCxt.dll`, `Convert.dll`, `CAVA.exe`); the Linux rpm was
+  not searched, and `bin/` no longer ships it. That absence was once read as
+  proof the empty 200 was correct. Only the wire settles this.
 - **The event bitmask, the status codes and the facility numbers are all
   readable from `libConvert.so`** in the vendored rpm, via `GetEventDescr8`,
   `GetVCStatusDescr` and `GetFacilityIDDescr` — each a jump table or a compare
@@ -249,7 +265,10 @@ that read it could not pass on any real host.
   Dell's prose — it has been wrong here in both directions.
 - **`Debug`/`Verbose` are a 6-bit mask, not a scale.** `1` prints the banner
   only, `9` prints *less* than `3`, and **63** is the maximum — the level at
-  which CEE names the reason it refused a partner. Three bring-ups concluded
+  which CEE names the reason it refused a partner. **Linux only.** On Windows
+  `CAVA.exe` is silent at every level including 63, on every channel, measured
+  2026-08-22 on 9.3.0.0 — do not change registry values and restart services
+  expecting a trace there. Debug the protocol on Linux. Three bring-ups concluded
   "CEE tells you nothing" on the strength of `Debug=1`.
 - **The CEPA consumer contract is readable from the vendored rpm.** Dell
   publishes no protocol specification and CEE on Windows writes no log at
@@ -331,7 +350,7 @@ that read it could not pass on any real host.
 **Start here for anything CEPA-related.** These two supersede everything below
 wherever they disagree:
 
-- `docs/cepa-protocol.md` — **the protocol reference.** Both legs, the four
+- `docs/cepa-protocol.md` — **the protocol reference.** Both legs, the five
   gates a consumer must pass, the status-code table, the encoding rules, the
   diagnostic toolkit (`Debug=63`, `cepa_probe.sh`, `dbgcapture.ps1`) and a
   failure-signature → cause table. Written so you never have to read the
@@ -363,8 +382,12 @@ for current facts:
 - `docs/cee-9-3-windows-bring-up.md` — second bring-up (CEE 9.3.0.0 on Windows
   Server 2025). The `pktmon` stop-before-reading trap, CEE serving `/vee` while
   OneFS posts to `/`, and the OneFS `eventType` table resolved in full. Its
-  claim that `Debug`/`Verbose` are inert on Windows is wrong twice over: the
-  channel is `OutputDebugString`, not the event log, and the level was too low.
+  claim that `Debug`/`Verbose` are inert on Windows is half wrong: the channel
+  is `OutputDebugString`, not the event log. But "the level was too low" does
+  not hold — re-measured 2026-08-22 on 9.2.0.0, `CAVA.exe` writes nothing at
+  `Debug=63` either, on any channel. The trace-level table in
+  `docs/cepa-protocol.md` is a Linux measurement and does not transfer. Debug
+  the protocol on Linux; the Windows host will not explain itself.
 - `docs/cepa-2026-08-22-powerstore-session.md` — **the session that solved it.**
   Read its "Corrections to earlier documents" before trusting host facts in
   either bring-up document.
